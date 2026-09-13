@@ -1,0 +1,15 @@
+{
+  "name": "qr-wash-neon-v1",
+  "version": "1.0.0",
+  "private": true,
+  "description": "QR Wash POC - Neon PostgreSQL + Node.js + ESP32",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "pg": "^8.16.3"
+  }
+}

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QR-WASH • ชำระเงิน</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:#f4f7fb;color:#172033}
+.wrap{max-width:560px;margin:auto;padding:22px}
+.card{background:#fff;border:1px solid #e4e8ef;border-radius:20px;padding:24px;box-shadow:0 5px 20px #17203310;margin-bottom:18px}
+h1{margin:0;font-size:28px}
+.sub{color:#667085;margin:7px 0 22px}
+.machine{font-size:18px;font-weight:bold;margin-bottom:14px}
+.amounts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.amount-btn{border:0;border-radius:14px;padding:16px;background:#172033;color:#fff;font-size:18px;font-weight:bold;cursor:pointer}
+.amount-btn:hover{opacity:.9}
+.amount-btn.active{outline:3px solid #93c5fd}
+#qrBox{display:flex;justify-content:center;align-items:center;min-height:280px;padding:12px}
+#qrcode{padding:10px;background:#fff}
+.pay-title{text-align:center;color:#667085;margin:0}
+.big-amount{text-align:center;font-size:38px;font-weight:800;margin:8px 0 4px}
+.center{text-align:center}
+.note{background:#f8fafc;border-radius:12px;padding:12px;color:#475467;font-size:14px;line-height:1.55}
+.ok{color:#15803d;font-weight:bold}
+.err{color:#b42318;font-weight:bold}
+.small{font-size:13px;color:#667085}
+.back{display:inline-block;margin-bottom:14px;color:#475467;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">← กลับหน้า Admin</a>
+
+  <div class="card">
+    <h1>🚿 QR-WASH</h1>
+    <div class="sub">สแกน QR เพื่อชำระเงิน</div>
+
+    <div class="machine">🧼 เครื่องล้างรถ 01</div>
+
+    <div class="amounts">
+      <button class="amount-btn" onclick="selectAmount(10,this)">10 บาท</button>
+      <button class="amount-btn" onclick="selectAmount(20,this)">20 บาท</button>
+      <button class="amount-btn" onclick="selectAmount(50,this)">50 บาท</button>
+      <button class="amount-btn" onclick="selectAmount(100,this)">100 บาท</button>
+    </div>
+  </div>
+
+  <div class="card" id="paymentCard" style="display:none">
+    <p class="pay-title">ยอดที่ต้องชำระ</p>
+    <div class="big-amount" id="amountText">10.00 บาท</div>
+
+    <div id="qrBox"><div id="qrcode"></div></div>
+
+    <div class="center">
+      <div id="qrStatus" class="ok">กรุณาสแกน QR เพื่อชำระเงิน</div>
+      <div class="small" id="merchantText"></div>
+    </div>
+
+    <div class="note" style="margin-top:16px">
+      หลังจากชำระเงินสำเร็จ ระบบจะตรวจสอบ SMS จากธนาคาร
+      แล้วส่งคำสั่งไปยังเครื่องล้างรถอัตโนมัติ
+    </div>
+  </div>
+
+  <div id="error" class="card err" style="display:none"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+let qrConfig=null;
+let selectedAmount=0;
+
+function tlv(tag,value){
+  return tag + String(value.length).padStart(2,"0") + value;
+}
+
+function crc16(str){
+  let crc=0xFFFF;
+  for(let i=0;i<str.length;i++){
+    crc ^= str.charCodeAt(i)<<8;
+    for(let j=0;j<8;j++){
+      crc = (crc & 0x8000) ? ((crc<<1)^0x1021) : (crc<<1);
+      crc &= 0xFFFF;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4,"0");
+}
+
+function promptPayPayload(id,amount,name,city){
+  let clean=String(id||"").replace(/[^0-9]/g,"");
+
+  let account="";
+  if(clean.length===10){
+    if(clean[0]!=="0") throw new Error("เบอร์ PromptPay ต้องขึ้นต้นด้วย 0");
+    account="01"+"13"+"0066"+clean.slice(1);
+  }else if(clean.length===13){
+    account="02"+"13"+clean;
+  }else{
+    throw new Error("PROMPTPAY_ID ต้องเป็นเบอร์มือถือ 10 หลัก หรือเลข 13 หลัก");
+  }
+
+  const merchantAccount =
+    "0016A000000677010111" + account;
+
+  let payload =
+    tlv("00","01") +
+    tlv("01","12") +
+    tlv("29",merchantAccount) +
+    tlv("52","0000") +
+    tlv("53","764") +
+    tlv("54",Number(amount).toFixed(2)) +
+    tlv("58","TH") +
+    tlv("59",String(name||"QR-WASH").toUpperCase().slice(0,25)) +
+    tlv("60",String(city||"THAILAND").toUpperCase().slice(0,15));
+
+  payload += "6304";
+  payload += crc16(payload);
+  return payload;
+}
+
+async function loadConfig(){
+  try{
+    const r=await fetch("/api/qr/config");
+    const d=await r.json();
+    if(!r.ok || !d.enabled) throw new Error("ยังไม่ได้ตั้งค่า PROMPTPAY_ID ใน .env");
+    qrConfig=d;
+    document.getElementById("merchantText").textContent =
+      "ชำระให้ " + d.name;
+  }catch(e){
+    const el=document.getElementById("error");
+    el.textContent=e.message;
+    el.style.display="block";
+  }
+}
+
+function selectAmount(amount,btn){
+  if(!qrConfig){
+    alert("ระบบ QR ยังไม่ได้ตั้งค่า PromptPay");
+    return;
+  }
+
+  selectedAmount=amount;
+  document.querySelectorAll(".amount-btn").forEach(x=>x.classList.remove("active"));
+  btn.classList.add("active");
+
+  const card=document.getElementById("paymentCard");
+  card.style.display="block";
+  document.getElementById("amountText").textContent =
+    Number(amount).toLocaleString("th-TH",{minimumFractionDigits:2}) + " บาท";
+
+  const box=document.getElementById("qrcode");
+  box.innerHTML="";
+
+  try{
+    const payload=promptPayPayload(
+      qrConfig.promptpayId,
+      amount,
+      qrConfig.name,
+      qrConfig.city
+    );
+
+    new QRCode(box,{
+      text:payload,
+      width:250,
+      height:250,
+      correctLevel:QRCode.CorrectLevel.M
+    });
+
+    document.getElementById("qrStatus").textContent =
+      "กรุณาสแกน QR เพื่อชำระ " + amount + " บาท";
+  }catch(e){
+    document.getElementById("qrStatus").className="err";
+    document.getElementById("qrStatus").textContent=e.message;
+  }
+}
+
+loadConfig();
+</script>
+</body>
+</html>

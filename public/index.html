@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QR-WASH NEON V1 • Admin</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:#f4f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:20px}.brand h1{margin:0;font-size:28px}.brand p{margin:5px 0 0;color:#6b7280}.login{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.login input{width:190px}.card{background:#fff;border:1px solid #e4e8ef;border-radius:16px;padding:18px;box-shadow:0 4px 16px #1720330b;margin-bottom:18px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.stat{min-height:115px}.label{color:#667085;font-size:14px}.value{font-size:30px;font-weight:700;margin-top:12px}.unit{font-size:14px;color:#667085}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.machine{border:1px solid #e5e7eb;border-radius:14px;padding:16px}.machine-head{display:flex;justify-content:space-between;align-items:center}.machine h3{margin:0}.status{padding:6px 10px;border-radius:999px;font-size:13px;font-weight:bold}.online{background:#dcfce7;color:#166534}.offline{background:#fee2e2;color:#991b1b}.buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:15px}.pulse-btn{border:0;border-radius:12px;padding:14px 8px;background:#172033;color:white;font-weight:bold;cursor:pointer}.pulse-btn:hover{opacity:.88}.device-row{padding:12px 0;border-bottom:1px solid #edf0f4}.device-row:last-child{border-bottom:0}.device-name{font-weight:bold}.muted{color:#667085;font-size:13px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid #edf0f4;font-size:14px}th{color:#667085;background:#fafbfc}.pill{display:inline-block;padding:5px 8px;border-radius:999px;font-size:12px;font-weight:bold}.done{background:#dcfce7;color:#166534}.sent{background:#dbeafe;color:#1d4ed8}.queued{background:#fef3c7;color:#92400e}.failed{background:#fee2e2;color:#991b1b}.received{background:#e0e7ff;color:#3730a3}.manual{background:#f3e8ff;color:#7e22ce}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}.btn{border:1px solid #d0d5dd;background:#fff;border-radius:10px;padding:9px 13px;cursor:pointer}.danger{color:#b42318}.msg{margin-top:10px;min-height:20px;font-size:14px}.ok{color:#15803d}.err{color:#b42318}.small{font-size:12px;color:#667085}@media(max-width:850px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.login{width:100%}.login input{flex:1}}@media(max-width:500px){.wrap{padding:12px}.cards{grid-template-columns:1fr}.buttons{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><h1>🚿 QR-WASH NEON V1</h1><p>Admin Dashboard • Server → Neon → ESP32</p></div>
+    <div class="login"><a class="btn" href="/qr.html" target="_blank">📱 หน้ารับชำระ QR</a><input id="adminKey" type="password" placeholder="Admin Key"><button class="btn" onclick="saveKey()">เข้าใช้งาน</button></div>
+  </div>
+
+  <div class="cards">
+    <div class="card stat"><div class="label">Server</div><div id="serverStatus" class="value">—</div><div id="serverTime" class="unit">รอข้อมูล</div></div>
+    <div class="card stat"><div class="label">ESP32</div><div id="deviceStatus" class="value">—</div><div id="deviceSeen" class="unit">รอข้อมูล</div></div>
+    <div class="card stat"><div class="label">ยอดขายวันนี้</div><div id="revenue" class="value">0.00</div><div class="unit">บาท</div></div>
+    <div class="card stat"><div class="label">รายการ / Pulse วันนี้</div><div id="counts" class="value">0 / 0</div><div class="unit">รายการ / Pulse</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="toolbar"><h2>🎛️ ควบคุมเครื่อง</h2><button class="btn" onclick="loadDashboard()">รีเฟรช</button></div>
+      <div id="machines">กำลังโหลด...</div>
+      <div id="msg" class="msg"></div>
+    </div>
+    <div class="card">
+      <h2>📡 อุปกรณ์</h2>
+      <div id="devices">กำลังโหลด...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="toolbar"><h2>🧾 ประวัติรายการ</h2><span class="small">รีเฟรชอัตโนมัติทุก 3 วินาที</span></div>
+    <div class="table-wrap"><table><thead><tr><th>เวลา</th><th>ประเภท</th><th>ยอดเงิน</th><th>Pulse</th><th>สถานะ</th><th>ผลการทำงาน</th></tr></thead><tbody id="history"><tr><td colspan="6">กำลังโหลด...</td></tr></tbody></table></div>
+  </div>
+</div>
+<script>
+let adminKey=localStorage.getItem("qrwash_admin_key")||"";
+const keyInput=document.getElementById("adminKey"); keyInput.value=adminKey;
+function saveKey(){adminKey=keyInput.value.trim();localStorage.setItem("qrwash_admin_key",adminKey);loadDashboard()}
+function headers(){return {"x-admin-key":adminKey,"Content-Type":"application/json"}}
+function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function money(v){return Number(v||0).toLocaleString("th-TH",{minimumFractionDigits:2,maximumFractionDigits:2})}
+function time(v){return v?new Date(v).toLocaleString("th-TH"):"—"}
+function statusPill(s){const x=String(s||"").toUpperCase();let cls=x.toLowerCase();let text=x;const map={DONE:"สำเร็จ",SENT:"ส่งแล้ว",QUEUED:"รอส่ง",FAILED:"ล้มเหลว",RECEIVED:"รับแล้ว"};return `<span class="pill ${cls}">${map[x]||esc(text)}</span>`}
+async function loadDashboard(){
+ if(!adminKey){document.getElementById("msg").innerHTML='<span class="err">กรุณาใส่ Admin Key ก่อน</span>';return}
+ try{
+  const r=await fetch("/api/admin/dashboard",{headers:headers()}); const d=await r.json();
+  if(!r.ok) throw new Error(d.error||"ไม่สามารถโหลดข้อมูลได้");
+  document.getElementById("serverStatus").innerHTML='<span class="status online">ONLINE</span>';
+  document.getElementById("serverTime").textContent=time(d.server.time);
+  const dev=d.devices[0];
+  document.getElementById("deviceStatus").innerHTML=dev?(dev.online?'<span class="status online">ONLINE</span>':'<span class="status offline">OFFLINE</span>'):'—';
+  document.getElementById("deviceSeen").textContent=dev&&dev.last_seen?`ล่าสุด ${time(dev.last_seen)}`:'ยังไม่เคยเชื่อมต่อ';
+  document.getElementById("revenue").textContent=money(d.stats.today_revenue);
+  document.getElementById("counts").textContent=`${Number(d.stats.today_transactions||0)} / ${Number(d.stats.today_pulses||0)}`;
+  renderMachines(d.machines,d.devices); renderDevices(d.devices); renderHistory(d.recent);
+  document.getElementById("msg").innerHTML='<span class="ok">เชื่อมต่อ Dashboard สำเร็จ</span>';
+ }catch(e){document.getElementById("msg").innerHTML=`<span class="err">${esc(e.message)}</span>`;document.getElementById("serverStatus").innerHTML='<span class="status offline">ERROR</span>'}
+}
+function renderMachines(ms,ds){
+ const dev=ds[0];
+ if(!ms.length){document.getElementById("machines").innerHTML='<div class="muted">ยังไม่มีเครื่อง</div>';return}
+ document.getElementById("machines").innerHTML=ms.map(m=>`<div class="machine"><div class="machine-head"><h3>${esc(m.name)}</h3><span class="status ${dev&&dev.online?'online':'offline'}">${dev&&dev.online?'พร้อมใช้งาน':'ESP32 OFFLINE'}</span></div><div class="muted" style="margin-top:7px">อัตรา POC: 10 บาท = 1 Pulse</div><div class="buttons"><button class="pulse-btn" onclick="sendPulse(${dev?.id||0},1,10)">10 บาท<br>1 Pulse</button><button class="pulse-btn" onclick="sendPulse(${dev?.id||0},2,20)">20 บาท<br>2 Pulse</button><button class="pulse-btn" onclick="sendPulse(${dev?.id||0},5,50)">50 บาท<br>5 Pulse</button><button class="pulse-btn" onclick="sendPulse(${dev?.id||0},10,100)">100 บาท<br>10 Pulse</button></div></div>`).join("")
+}
+function renderDevices(ds){document.getElementById("devices").innerHTML=ds.length?ds.map(d=>`<div class="device-row"><div class="device-name">${esc(d.name)} <span class="status ${d.online?'online':'offline'}">${d.online?'ONLINE':'OFFLINE'}</span></div><div class="muted">เครื่อง: ${esc(d.machine_name||'ยังไม่ผูก')}<br>Last seen: ${time(d.last_seen)}</div></div>`).join(""):'<div class="muted">ไม่พบอุปกรณ์</div>'}
+function renderHistory(rows){
+ document.getElementById("history").innerHTML=rows.length?rows.map(r=>{
+  const type=r.command_type==='MANUAL'?'MANUAL':(r.source==='kbank_sms'?'KBank QR':(r.source==='test'?'TEST':'PAYMENT'));
+  const amount=r.amount==null?'—':`${money(r.amount)} บาท`;
+  const result=r.command_status==='DONE'?esc(r.device_message||'Pulse completed'):esc(r.command_status||r.payment_status||'—');
+  return `<tr><td>${time(r.created_at)}</td><td>${type}</td><td>${amount}</td><td>${r.pulse_count||0}</td><td>${statusPill(r.command_status||r.payment_status)}</td><td>${result}</td></tr>`;
+ }).join(""):'<tr><td colspan="6">ยังไม่มีรายการ</td></tr>'
+}
+async function sendPulse(deviceId,pulses,amount){
+ if(!deviceId){alert("ยังไม่พบ ESP32");return}
+ if(!confirm(`สั่งเครื่อง ${amount} บาท / ${pulses} Pulse ใช่หรือไม่?`))return;
+ try{const r=await fetch("/api/admin/command",{method:"POST",headers:headers(),body:JSON.stringify({deviceId,pulseCount:pulses,note:`Admin ${amount} baht test`})});const d=await r.json();if(!r.ok)throw new Error(d.error||"สั่งงานไม่สำเร็จ");document.getElementById("msg").innerHTML=`<span class="ok">ส่งคำสั่งแล้ว #${d.command.id} — รอ ESP32 รับคำสั่ง</span>`;loadDashboard()}catch(e){document.getElementById("msg").innerHTML=`<span class="err">${esc(e.message)}</span>`}
+}
+loadDashboard();setInterval(loadDashboard,3000);
+</script>
+</body>
+</html>
