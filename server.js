@@ -199,12 +199,19 @@ app.post("/api/qr/session", async (req, res) => {
     );
 
     // ใช้ commands เป็นตัวผูก session กับเครื่อง โดยยังไม่สร้าง Pulse
+    // pulse_count ต้องมากกว่า 0 ตาม constraint ของฐานข้อมูล
+    // แต่ status = WAITING จึงยังไม่ถูก ESP32 นำไป Pulse
     const commandResult = await client.query(
       `INSERT INTO commands
        (payment_id, device_id, command_type, pulse_count, status, device_message)
-       VALUES ($1, $2, 'QR_WAIT', 0, 'WAITING', $3)
+       VALUES ($1, $2, 'QR_WAIT', $3, 'WAITING', $4)
        RETURNING *`,
-      [paymentResult.rows[0].id, device.id, `Waiting QR payment ${amount} baht`]
+      [
+        paymentResult.rows[0].id,
+        device.id,
+        pulsesFromBaht(amount),
+        `Waiting QR payment ${amount} baht`
+      ]
     );
 
     await client.query("COMMIT");
