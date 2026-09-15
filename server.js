@@ -69,6 +69,7 @@ app.post("/api/test-payment", async (req, res) => {
     }
 
     const pulses = pulsesFromBaht(amount);
+
     if (pulses < 1) {
       return res.status(400).json({
         ok: false,
@@ -76,7 +77,8 @@ app.post("/api/test-payment", async (req, res) => {
       });
     }
 
-    const transactionKey = `TEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const transactionKey =
+      `TEST-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     await client.query("BEGIN");
 
@@ -85,11 +87,18 @@ app.post("/api/test-payment", async (req, res) => {
        (transaction_key, amount, source, raw_message, status)
        VALUES ($1, $2, 'test', $3, 'RECEIVED')
        RETURNING *`,
-      [transactionKey, amount, `TEST PAYMENT ${amount}`]
+      [
+        transactionKey,
+        amount,
+        `TEST PAYMENT ${amount}`
+      ]
     );
 
     const deviceResult = await client.query(
-      `SELECT id, name FROM devices WHERE token = $1 LIMIT 1`,
+      `SELECT id, name
+       FROM devices
+       WHERE token = $1
+       LIMIT 1`,
       [DEVICE_TOKEN]
     );
 
@@ -102,7 +111,11 @@ app.post("/api/test-payment", async (req, res) => {
        (payment_id, device_id, command_type, pulse_count, status)
        VALUES ($1, $2, 'PULSE', $3, 'QUEUED')
        RETURNING *`,
-      [paymentResult.rows[0].id, deviceResult.rows[0].id, pulses]
+      [
+        paymentResult.rows[0].id,
+        deviceResult.rows[0].id,
+        pulses
+      ]
     );
 
     await client.query("COMMIT");
@@ -112,10 +125,16 @@ app.post("/api/test-payment", async (req, res) => {
       payment: paymentResult.rows[0],
       command: commandResult.rows[0]
     });
+
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     console.error(e);
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   } finally {
     client.release();
   }
@@ -127,17 +146,25 @@ app.post("/api/test-payment", async (req, res) => {
 // เครื่องต้องสร้างรายการรอรับเงินก่อนทุกครั้ง
 // SMS เงินเข้าอย่างเดียวจะไม่สามารถสร้าง Pulse ได้
 // ============================================================
+
 const QR_ALLOWED_AMOUNTS = [10, 20, 50, 100];
-const QR_SESSION_TIMEOUT_SECONDS = Number(process.env.QR_SESSION_TIMEOUT_SECONDS || 90);
+
+const QR_SESSION_TIMEOUT_SECONDS =
+  Number(process.env.QR_SESSION_TIMEOUT_SECONDS || 90);
 
 app.post("/api/qr/session", async (req, res) => {
+
   if (req.headers.authorization !== `Bearer ${DEVICE_TOKEN}`) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
+    return res.status(401).json({
+      ok: false,
+      error: "Unauthorized"
+    });
   }
 
   const client = await pool.connect();
 
   try {
+
     const amount = Number(req.body.amount);
 
     if (!QR_ALLOWED_AMOUNTS.includes(amount)) {
@@ -156,7 +183,10 @@ app.post("/api/qr/session", async (req, res) => {
     );
 
     if (!deviceResult.rows.length) {
-      return res.status(404).json({ ok: false, error: "Device not found" });
+      return res.status(404).json({
+        ok: false,
+        error: "Device not found"
+      });
     }
 
     const device = deviceResult.rows[0];
@@ -188,14 +218,19 @@ app.post("/api/qr/session", async (req, res) => {
       [device.id]
     );
 
-    const transactionKey = `QR-${device.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const transactionKey =
+      `QR-${device.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     const paymentResult = await client.query(
       `INSERT INTO payments
        (transaction_key, amount, source, raw_message, status)
        VALUES ($1, $2, 'qr_session', $3, 'WAITING')
        RETURNING *`,
-      [transactionKey, amount, `QR SESSION WAITING ${amount} BAHT DEVICE ${device.id}`]
+      [
+        transactionKey,
+        amount,
+        `QR SESSION WAITING ${amount} BAHT DEVICE ${device.id}`
+      ]
     );
 
     // ใช้ commands เป็นตัวผูก session กับเครื่อง โดยยังไม่สร้าง Pulse
@@ -218,6 +253,7 @@ app.post("/api/qr/session", async (req, res) => {
 
     res.json({
       ok: true,
+
       session: {
         transactionKey,
         amount,
@@ -227,42 +263,73 @@ app.post("/api/qr/session", async (req, res) => {
         machineId: device.machine_id,
         expiresInSeconds: QR_SESSION_TIMEOUT_SECONDS
       },
+
       payment: paymentResult.rows[0],
+
       sessionRecord: commandResult.rows[0]
     });
+
   } catch (e) {
+
     await client.query("ROLLBACK").catch(() => {});
     console.error(e);
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   } finally {
     client.release();
   }
 });
 
+
 app.post("/api/qr/session/cancel", async (req, res) => {
+
   if (req.headers.authorization !== `Bearer ${DEVICE_TOKEN}`) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
+    return res.status(401).json({
+      ok: false,
+      error: "Unauthorized"
+    });
   }
 
   try {
+
     const result = await pool.query(
       `UPDATE payments p
        SET status = 'CANCELLED'
        FROM commands c
        WHERE p.id = c.payment_id
-         AND c.device_id = (SELECT id FROM devices WHERE token = $1 LIMIT 1)
+         AND c.device_id = (
+           SELECT id
+           FROM devices
+           WHERE token = $1
+           LIMIT 1
+         )
          AND p.source = 'qr_session'
          AND p.status = 'WAITING'
        RETURNING p.id, p.transaction_key, p.amount, p.status`,
       [DEVICE_TOKEN]
     );
 
-    res.json({ ok: true, cancelled: result.rows });
+    res.json({
+      ok: true,
+      cancelled: result.rows
+    });
+
   } catch (e) {
+
     console.error(e);
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   }
 });
+
 
 // ============================================================
 // SMS BRIDGE — TEST MODE
@@ -274,7 +341,9 @@ app.post("/api/qr/session/cancel", async (req, res) => {
 // - ยังไม่สร้าง command
 // - ยังไม่สั่ง Pulse
 // ============================================================
+
 app.post("/api/sms/test", async (req, res) => {
+
   if (req.headers["x-sms-key"] !== SMS_BRIDGE_KEY) {
     return res.status(401).json({
       ok: false,
@@ -283,6 +352,7 @@ app.post("/api/sms/test", async (req, res) => {
   }
 
   try {
+
     const {
       transactionKey,
       sender,
@@ -308,6 +378,7 @@ app.post("/api/sms/test", async (req, res) => {
     console.log();
 
     // สำคัญ: TEST MODE ยังไม่แตะ payments / commands
+
     res.json({
       ok: true,
       mode: "TEST",
@@ -315,41 +386,67 @@ app.post("/api/sms/test", async (req, res) => {
       transactionKey,
       message: "SMS received by server"
     });
+
   } catch (e) {
+
     console.error(e);
+
     res.status(500).json({
       ok: false,
       error: e.message
     });
+
   }
 });
+
 
 // ============================================================
 // SMS BRIDGE — LIVE MODE
 // Android KBank SMS -> Server -> Neon -> ESP32 Command
 //
-// รูปแบบ SMS ที่รองรับใน POC นี้ เช่น:
-// 13/09/69 09:39 บช X-1621 เงินเข้า 20.00 คงเหลือ 240.32 บ.
-//
-// สำคัญ:
-// - endpoint นี้จะสร้าง payment จริง
-// - สร้าง command PULSE จริง
-// - ESP32 จะดึง command ไปทำ Pulse
-// - transactionKey ใช้กัน SMS ซ้ำ
+// วิธีใหม่:
+// - ถ้า Android ส่ง amount มา จะใช้ amount โดยตรง
+// - rawMessage ยังเก็บไว้เป็นหลักฐาน
+// - ถ้าไม่มี amount จะ fallback ไปอ่าน rawMessage
+// - ต้องมี QR SESSION ของเครื่องนี้ + ยอดตรงกัน
+//   จึงจะสร้าง PULSE
 // ============================================================
-function parseKBankAmount(rawMessage) {
-  const text = String(rawMessage || "").replace(/,/g, "");
 
-  const match = text.match(/เงินเข้า\s*([0-9]+(?:\.[0-9]{1,2})?)/i);
+function parseKBankAmount(rawMessage) {
+
+  const text = String(rawMessage || "")
+    .replace(/,/g, "")
+    .replace(/\u00A0/g, " ")
+    .trim();
+
+  // รองรับ:
+  // เงินเข้า 20.00
+  // เงินเข้า20.00
+  // เงินเข้า 20
+  // เงิน เข้า 20.00
+
+  const match = text.match(
+    /เงิน\s*เข้า\s*([0-9]+(?:\.[0-9]{1,2})?)/i
+  );
+
   if (!match) return null;
 
   const amount = Number(match[1]);
-  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
 
   return amount;
 }
 
+
 app.post("/api/sms/receive", async (req, res) => {
+
+  // ----------------------------------------------------------
+  // ตรวจสอบ SMS Bridge Key
+  // ----------------------------------------------------------
+
   if (req.headers["x-sms-key"] !== SMS_BRIDGE_KEY) {
     return res.status(401).json({
       ok: false,
@@ -360,12 +457,18 @@ app.post("/api/sms/receive", async (req, res) => {
   const client = await pool.connect();
 
   try {
+
     const {
       transactionKey,
       sender,
       rawMessage,
-      receivedAt
+      receivedAt,
+      amount: bodyAmount
     } = req.body || {};
+
+    // --------------------------------------------------------
+    // ตรวจข้อมูลขั้นต่ำ
+    // --------------------------------------------------------
 
     if (!transactionKey || !rawMessage) {
       return res.status(400).json({
@@ -374,9 +477,28 @@ app.post("/api/sms/receive", async (req, res) => {
       });
     }
 
-    const amount = parseKBankAmount(rawMessage);
+    // --------------------------------------------------------
+    // วิธีใหม่
+    //
+    // ถ้า Android ส่ง amount มา:
+    //     amount = 20
+    //
+    // Server จะใช้ amount นี้โดยตรง
+    //
+    // ถ้าไม่มี amount:
+    //     ค่อย fallback ไปอ่านจาก rawMessage
+    // --------------------------------------------------------
 
-    if (amount === null) {
+    let amount = Number(bodyAmount);
+
+    const hasBodyAmount =
+      Number.isFinite(amount) && amount > 0;
+
+    if (!hasBodyAmount) {
+      amount = parseKBankAmount(rawMessage);
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({
         ok: false,
         error: "ไม่พบยอดเงินเข้าใน SMS KBank",
@@ -391,13 +513,20 @@ app.post("/api/sms/receive", async (req, res) => {
     console.log("Sender:", sender || "");
     console.log("Received At:", receivedAt || "");
     console.log("Amount:", amount);
+    console.log(
+      "Amount Source:",
+      hasBodyAmount ? "BODY" : "SMS"
+    );
     console.log("Message:", rawMessage);
     console.log("========================================");
     console.log();
 
     await client.query("BEGIN");
 
+    // --------------------------------------------------------
     // ป้องกัน SMS เดิมเข้าซ้ำ
+    // --------------------------------------------------------
+
     const existingSms = await client.query(
       `SELECT p.*
        FROM payments p
@@ -407,7 +536,9 @@ app.post("/api/sms/receive", async (req, res) => {
     );
 
     if (existingSms.rows.length) {
+
       await client.query("COMMIT");
+
       return res.json({
         ok: true,
         mode: "LIVE",
@@ -418,9 +549,21 @@ app.post("/api/sms/receive", async (req, res) => {
       });
     }
 
-    // สำคัญที่สุด:
-    // เงินเข้า KBank จะถูกยอมรับก็ต่อเมื่อมี QR session
-    // ของเครื่องนี้ที่รออยู่ และยอดตรงกันเท่านั้น
+    // --------------------------------------------------------
+    // สำคัญที่สุด
+    //
+    // เงินเข้า KBank จะถูกยอมรับก็ต่อเมื่อ:
+    //
+    // 1. มี QR SESSION
+    // 2. เป็นของ DEVICE นี้
+    // 3. session ยัง WAITING
+    // 4. QR_WAIT ยัง WAITING
+    // 5. ยอดเงินตรงกัน
+    // 6. session ยังไม่หมดอายุ
+    //
+    // ไม่ผ่าน = ไม่สร้าง PULSE
+    // --------------------------------------------------------
+
     const waiting = await client.query(
       `SELECT
          p.id AS payment_id,
@@ -431,29 +574,49 @@ app.post("/api/sms/receive", async (req, res) => {
          c.device_id,
          d.name AS device_name
        FROM payments p
-       JOIN commands c ON c.payment_id = p.id
-       JOIN devices d ON d.id = c.device_id
+       JOIN commands c
+         ON c.payment_id = p.id
+       JOIN devices d
+         ON d.id = c.device_id
        WHERE p.source = 'qr_session'
          AND p.status = 'WAITING'
          AND c.command_type = 'QR_WAIT'
          AND c.status = 'WAITING'
-         AND c.device_id = (SELECT id FROM devices WHERE token = $1 LIMIT 1)
+         AND c.device_id = (
+           SELECT id
+           FROM devices
+           WHERE token = $1
+           LIMIT 1
+         )
          AND p.amount = $2
-         AND p.created_at >= NOW() - INTERVAL '${QR_SESSION_TIMEOUT_SECONDS} seconds'
+         AND p.created_at >= NOW() -
+             INTERVAL '${QR_SESSION_TIMEOUT_SECONDS} seconds'
        ORDER BY p.created_at DESC
        LIMIT 1
        FOR UPDATE OF p`,
-      [DEVICE_TOKEN, amount]
+      [
+        DEVICE_TOKEN,
+        amount
+      ]
     );
 
+    // --------------------------------------------------------
+    // ไม่มี QR SESSION ที่ตรงกัน
+    // --------------------------------------------------------
+
     if (!waiting.rows.length) {
+
       await client.query("COMMIT");
 
-      // เงินเข้าจริง แต่ไม่มี QR session ที่ตรงกัน
-      // ห้ามสร้าง payment / command / Pulse
-      console.log("IGNORED SMS — NO MATCHING QR SESSION");
+      console.log(
+        "IGNORED SMS — NO MATCHING QR SESSION"
+      );
+
       console.log("Amount:", amount);
-      console.log("Transaction Key:", transactionKey);
+      console.log(
+        "Transaction Key:",
+        transactionKey
+      );
 
       return res.json({
         ok: true,
@@ -463,15 +626,26 @@ app.post("/api/sms/receive", async (req, res) => {
         ignored: true,
         transactionKey,
         amount,
-        message: "เงินเข้า แต่ไม่มี QR session ของเครื่องที่ตรงยอด จึงไม่ Pulse"
+        message:
+          "เงินเข้า แต่ไม่มี QR session ของเครื่องที่ตรงยอด จึงไม่ Pulse"
       });
     }
 
     const session = waiting.rows[0];
-    const pulses = pulsesFromBaht(session.amount);
+
+    // --------------------------------------------------------
+    // คำนวณ Pulse
+    // 10 บาท = 1 Pulse
+    // --------------------------------------------------------
+
+    const pulses = pulsesFromBaht(
+      session.amount
+    );
 
     if (pulses < 1) {
+
       await client.query("COMMIT");
+
       return res.json({
         ok: true,
         mode: "LIVE",
@@ -484,7 +658,10 @@ app.post("/api/sms/receive", async (req, res) => {
       });
     }
 
-    // เปลี่ยน QR session เดิมให้เป็น payment ที่รับเงินจริง
+    // --------------------------------------------------------
+    // เปลี่ยน QR SESSION เดิมให้เป็น payment จริง
+    // --------------------------------------------------------
+
     const paymentResult = await client.query(
       `UPDATE payments
        SET source = 'kbank_sms',
@@ -493,23 +670,51 @@ app.post("/api/sms/receive", async (req, res) => {
            transaction_key = $2
        WHERE id = $3
        RETURNING *`,
-      [rawMessage, transactionKey, session.payment_id]
+      [
+        rawMessage,
+        transactionKey,
+        session.payment_id
+      ]
     );
 
-    // QR_WAIT เดิมเป็นเพียง session marker
+    // --------------------------------------------------------
+    // QR_WAIT เดิมเป็น session marker
+    // --------------------------------------------------------
+
     await client.query(
       `UPDATE commands
        SET status = 'MATCHED',
            device_message = $1
        WHERE id = $2`,
-      [`QR matched KBank SMS ${amount} baht`, session.session_command_id]
+      [
+        `QR matched KBank SMS ${amount} baht`,
+        session.session_command_id
+      ]
     );
 
-    // จากจุดนี้เท่านั้นจึงสร้างคำสั่ง Pulse
+    // --------------------------------------------------------
+    // จากจุดนี้เท่านั้นจึงสร้าง PULSE
+    // --------------------------------------------------------
+
     const commandResult = await client.query(
       `INSERT INTO commands
-       (payment_id, device_id, command_type, pulse_count, status, device_message)
-       VALUES ($1, $2, 'PULSE', $3, 'QUEUED', $4)
+       (
+         payment_id,
+         device_id,
+         command_type,
+         pulse_count,
+         status,
+         device_message
+       )
+       VALUES
+       (
+         $1,
+         $2,
+         'PULSE',
+         $3,
+         'QUEUED',
+         $4
+       )
        RETURNING *`,
       [
         session.payment_id,
@@ -520,6 +725,10 @@ app.post("/api/sms/receive", async (req, res) => {
     );
 
     await client.query("COMMIT");
+
+    // --------------------------------------------------------
+    // สำเร็จ
+    // --------------------------------------------------------
 
     res.json({
       ok: true,
@@ -537,42 +746,70 @@ app.post("/api/sms/receive", async (req, res) => {
         name: session.device_name
       }
     });
+
   } catch (e) {
+
     await client.query("ROLLBACK").catch(() => {});
+
     console.error(e);
+
     res.status(500).json({
       ok: false,
       error: e.message
     });
+
   } finally {
+
     client.release();
+
   }
 });
 
+
+// ============================================================
+// ESP32 COMMAND
+// ============================================================
+
 app.get("/api/device/commands", async (req, res) => {
+
   if (req.headers.authorization !== `Bearer ${DEVICE_TOKEN}`) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
+    return res.status(401).json({
+      ok: false,
+      error: "Unauthorized"
+    });
   }
 
   const client = await pool.connect();
+
   try {
+
     await client.query("BEGIN");
 
     const device = await client.query(
-      `SELECT id FROM devices WHERE token = $1 LIMIT 1 FOR UPDATE`,
+      `SELECT id
+       FROM devices
+       WHERE token = $1
+       LIMIT 1
+       FOR UPDATE`,
       [DEVICE_TOKEN]
     );
 
     if (!device.rows.length) {
+
       await client.query("ROLLBACK");
-      return res.status(404).json({ ok: false, error: "Device not found" });
+
+      return res.status(404).json({
+        ok: false,
+        error: "Device not found"
+      });
     }
 
     const deviceId = device.rows[0].id;
 
     await client.query(
       `UPDATE devices
-       SET online = TRUE, last_seen = NOW()
+       SET online = TRUE,
+           last_seen = NOW()
        WHERE id = $1`,
       [deviceId]
     );
@@ -580,7 +817,8 @@ app.get("/api/device/commands", async (req, res) => {
     const command = await client.query(
       `SELECT *
        FROM commands
-       WHERE device_id = $1 AND status = 'QUEUED'
+       WHERE device_id = $1
+         AND status = 'QUEUED'
        ORDER BY created_at ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED`,
@@ -588,38 +826,71 @@ app.get("/api/device/commands", async (req, res) => {
     );
 
     if (!command.rows.length) {
+
       await client.query("COMMIT");
-      return res.json({ ok: true, command: null });
+
+      return res.json({
+        ok: true,
+        command: null
+      });
     }
 
     const updated = await client.query(
       `UPDATE commands
-       SET status = 'SENT', sent_at = NOW()
-       WHERE id = $1 AND status = 'QUEUED'
+       SET status = 'SENT',
+           sent_at = NOW()
+       WHERE id = $1
+         AND status = 'QUEUED'
        RETURNING *`,
       [command.rows[0].id]
     );
 
     await client.query("COMMIT");
-    res.json({ ok: true, command: updated.rows[0] });
+
+    res.json({
+      ok: true,
+      command: updated.rows[0]
+    });
+
   } catch (e) {
+
     await client.query("ROLLBACK").catch(() => {});
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   } finally {
+
     client.release();
+
   }
 });
 
+
 app.post("/api/device/ack", async (req, res) => {
+
   if (req.headers.authorization !== `Bearer ${DEVICE_TOKEN}`) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
+    return res.status(401).json({
+      ok: false,
+      error: "Unauthorized"
+    });
   }
 
   try {
-    const { commandId, success, message } = req.body;
+
+    const {
+      commandId,
+      success,
+      message
+    } = req.body;
 
     if (!commandId) {
-      return res.status(400).json({ ok: false, error: "commandId required" });
+      return res.status(400).json({
+        ok: false,
+        error: "commandId required"
+      });
     }
 
     const result = await pool.query(
@@ -629,53 +900,132 @@ app.post("/api/device/ack", async (req, res) => {
            device_message = $2
        WHERE id = $3
        RETURNING *`,
-      [success ? "DONE" : "FAILED", message || "", commandId]
+      [
+        success ? "DONE" : "FAILED",
+        message || "",
+        commandId
+      ]
     );
 
     if (!result.rows.length) {
-      return res.status(404).json({ ok: false, error: "Command not found" });
+      return res.status(404).json({
+        ok: false,
+        error: "Command not found"
+      });
     }
 
-    // ถ้า command มาจาก payment ให้ปรับสถานะ payment ตามผล Pulse
+    // ถ้า command มาจาก payment
+    // ให้ปรับสถานะ payment ตามผล Pulse
+
     if (result.rows[0].payment_id) {
+
       await pool.query(
         `UPDATE payments
          SET status = $1
          WHERE id = $2`,
-        [success ? "COMPLETED" : "FAILED", result.rows[0].payment_id]
+        [
+          success ? "COMPLETED" : "FAILED",
+          result.rows[0].payment_id
+        ]
       );
     }
 
-    res.json({ ok: true, command: result.rows[0] });
+    res.json({
+      ok: true,
+      command: result.rows[0]
+    });
+
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   }
 });
 
+
 app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
+
   try {
-    const [health, stats, devices, machines, recent] = await Promise.all([
-      pool.query("SELECT NOW() AS time"),
+
+    const [
+      health,
+      stats,
+      devices,
+      machines,
+      recent
+    ] = await Promise.all([
+
+      pool.query(
+        "SELECT NOW() AS time"
+      ),
+
       pool.query(`
         SELECT
-          COALESCE((SELECT SUM(p.amount) FROM payments p JOIN commands c ON c.payment_id = p.id WHERE p.created_at >= CURRENT_DATE AND p.source = 'kbank_sms' AND c.command_type = 'PULSE'), 0) AS today_revenue,
-          (SELECT COUNT(*) FROM payments p JOIN commands c ON c.payment_id = p.id WHERE p.created_at >= CURRENT_DATE AND p.source = 'kbank_sms' AND c.command_type = 'PULSE') AS today_transactions,
-          COALESCE((
-            SELECT SUM(c.pulse_count)
-            FROM commands c
-            JOIN payments p ON p.id = c.payment_id
+          COALESCE(
+            (
+              SELECT SUM(p.amount)
+              FROM payments p
+              JOIN commands c
+                ON c.payment_id = p.id
+              WHERE p.created_at >= CURRENT_DATE
+                AND p.source = 'kbank_sms'
+                AND c.command_type = 'PULSE'
+            ),
+            0
+          ) AS today_revenue,
+
+          (
+            SELECT COUNT(*)
+            FROM payments p
+            JOIN commands c
+              ON c.payment_id = p.id
             WHERE p.created_at >= CURRENT_DATE
               AND p.source = 'kbank_sms'
               AND c.command_type = 'PULSE'
-          ), 0) AS today_pulses
+          ) AS today_transactions,
+
+          COALESCE(
+            (
+              SELECT SUM(c.pulse_count)
+              FROM commands c
+              JOIN payments p
+                ON p.id = c.payment_id
+              WHERE p.created_at >= CURRENT_DATE
+                AND p.source = 'kbank_sms'
+                AND c.command_type = 'PULSE'
+            ),
+            0
+          ) AS today_pulses
       `),
+
       pool.query(`
-        SELECT d.id, d.name, d.token, d.online, d.last_seen, d.machine_id, m.name AS machine_name
+        SELECT
+          d.id,
+          d.name,
+          d.token,
+          d.online,
+          d.last_seen,
+          d.machine_id,
+          m.name AS machine_name
         FROM devices d
-        LEFT JOIN machines m ON m.id = d.machine_id
+        LEFT JOIN machines m
+          ON m.id = d.machine_id
         ORDER BY d.id
       `),
-      pool.query(`SELECT id, name, enabled, pulse_per_10_baht FROM machines ORDER BY id`),
+
+      pool.query(`
+        SELECT
+          id,
+          name,
+          enabled,
+          pulse_per_10_baht
+        FROM machines
+        ORDER BY id
+      `),
+
       pool.query(`
         SELECT
           c.id AS command_id,
@@ -694,94 +1044,194 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
           p.transaction_key,
           p.status AS payment_status
         FROM commands c
-        JOIN payments p ON p.id = c.payment_id
-        JOIN devices d ON d.id = c.device_id
+        JOIN payments p
+          ON p.id = c.payment_id
+        JOIN devices d
+          ON d.id = c.device_id
         WHERE p.source = 'kbank_sms'
           AND c.command_type = 'PULSE'
         ORDER BY c.created_at DESC
         LIMIT 50
       `)
+
     ]);
 
-    const deviceRows = devices.rows.map(d => ({
-      ...d,
-      online: onlineFromLastSeen(d.last_seen)
-    }));
+    const deviceRows =
+      devices.rows.map(d => ({
+        ...d,
+        online: onlineFromLastSeen(d.last_seen)
+      }));
 
     res.json({
       ok: true,
-      server: { online: true, time: health.rows[0].time },
+
+      server: {
+        online: true,
+        time: health.rows[0].time
+      },
+
       stats: stats.rows[0],
+
       devices: deviceRows,
+
       machines: machines.rows,
+
       recent: recent.rows
     });
+
   } catch (e) {
+
     console.error(e);
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   }
 });
+
 
 app.get("/api/admin/devices", requireAdmin, async (req, res) => {
+
   try {
+
     const result = await pool.query(`
-      SELECT d.id, d.name, d.online, d.last_seen, d.machine_id, m.name AS machine_name
+      SELECT
+        d.id,
+        d.name,
+        d.online,
+        d.last_seen,
+        d.machine_id,
+        m.name AS machine_name
       FROM devices d
-      LEFT JOIN machines m ON m.id = d.machine_id
+      LEFT JOIN machines m
+        ON m.id = d.machine_id
       ORDER BY d.id
     `);
+
     res.json({
       ok: true,
-      devices: result.rows.map(d => ({ ...d, online: onlineFromLastSeen(d.last_seen) }))
+
+      devices: result.rows.map(d => ({
+        ...d,
+        online: onlineFromLastSeen(d.last_seen)
+      }))
     });
+
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   }
 });
 
+
 app.post("/api/admin/command", requireAdmin, async (req, res) => {
+
   const client = await pool.connect();
+
   try {
+
     const deviceId = Number(req.body.deviceId);
     const pulseCount = Number(req.body.pulseCount);
 
     if (!Number.isInteger(deviceId) || deviceId <= 0) {
-      return res.status(400).json({ ok: false, error: "deviceId ไม่ถูกต้อง" });
+      return res.status(400).json({
+        ok: false,
+        error: "deviceId ไม่ถูกต้อง"
+      });
     }
-    if (!Number.isInteger(pulseCount) || pulseCount < 1 || pulseCount > 1000) {
-      return res.status(400).json({ ok: false, error: "pulseCount ต้องเป็น 1-1000" });
+
+    if (
+      !Number.isInteger(pulseCount) ||
+      pulseCount < 1 ||
+      pulseCount > 1000
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: "pulseCount ต้องเป็น 1-1000"
+      });
     }
 
     const device = await client.query(
-      `SELECT id, name FROM devices WHERE id = $1 LIMIT 1`,
+      `SELECT id, name
+       FROM devices
+       WHERE id = $1
+       LIMIT 1`,
       [deviceId]
     );
+
     if (!device.rows.length) {
-      return res.status(404).json({ ok: false, error: "ไม่พบ ESP32 device" });
+      return res.status(404).json({
+        ok: false,
+        error: "ไม่พบ ESP32 device"
+      });
     }
 
     await client.query("BEGIN");
+
     const command = await client.query(
       `INSERT INTO commands
-       (payment_id, device_id, command_type, pulse_count, status, device_message)
-       VALUES (NULL, $1, 'MANUAL', $2, 'QUEUED', $3)
+       (
+         payment_id,
+         device_id,
+         command_type,
+         pulse_count,
+         status,
+         device_message
+       )
+       VALUES
+       (
+         NULL,
+         $1,
+         'MANUAL',
+         $2,
+         'QUEUED',
+         $3
+       )
        RETURNING *`,
-      [deviceId, pulseCount, req.body.note || "Admin manual command"]
+      [
+        deviceId,
+        pulseCount,
+        req.body.note || "Admin manual command"
+      ]
     );
+
     await client.query("COMMIT");
 
-    res.json({ ok: true, command: command.rows[0], device: device.rows[0] });
+    res.json({
+      ok: true,
+      command: command.rows[0],
+      device: device.rows[0]
+    });
+
   } catch (e) {
+
     await client.query("ROLLBACK").catch(() => {});
+
     console.error(e);
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   } finally {
+
     client.release();
+
   }
 });
 
+
 app.get("/api/transactions", async (req, res) => {
+
   try {
+
     const result = await pool.query(
       `SELECT
          c.id AS command_id,
@@ -800,15 +1250,26 @@ app.get("/api/transactions", async (req, res) => {
          p.transaction_key,
          p.status AS payment_status
        FROM commands c
-       LEFT JOIN payments p ON p.id = c.payment_id
-       LEFT JOIN devices d ON d.id = c.device_id
+       LEFT JOIN payments p
+         ON p.id = c.payment_id
+       LEFT JOIN devices d
+         ON d.id = c.device_id
        ORDER BY c.created_at DESC
        LIMIT 50`
     );
 
-    res.json({ ok: true, transactions: result.rows });
+    res.json({
+      ok: true,
+      transactions: result.rows
+    });
+
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
+
+    res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+
   }
 });
 
@@ -818,11 +1279,27 @@ app.get("/api/transactions", async (req, res) => {
 // Customer QR page reads this configuration.
 // Fill PROMPTPAY_ID in .env before using the real QR.
 // ============================================================
-const PROMPTPAY_ID = String(process.env.PROMPTPAY_ID || "").trim();
-const PROMPTPAY_NAME = String(process.env.PROMPTPAY_NAME || "QR-WASH").trim().slice(0, 25);
-const PROMPTPAY_CITY = String(process.env.PROMPTPAY_CITY || "THAILAND").trim().slice(0, 15);
+
+const PROMPTPAY_ID =
+  String(process.env.PROMPTPAY_ID || "").trim();
+
+const PROMPTPAY_NAME =
+  String(
+    process.env.PROMPTPAY_NAME || "QR-WASH"
+  )
+    .trim()
+    .slice(0, 25);
+
+const PROMPTPAY_CITY =
+  String(
+    process.env.PROMPTPAY_CITY || "THAILAND"
+  )
+    .trim()
+    .slice(0, 15);
+
 
 app.get("/api/qr/config", (req, res) => {
+
   res.json({
     ok: true,
     enabled: !!PROMPTPAY_ID,
@@ -830,8 +1307,12 @@ app.get("/api/qr/config", (req, res) => {
     name: PROMPTPAY_NAME,
     city: PROMPTPAY_CITY
   });
+
 });
 
+
 app.listen(PORT, () => {
-  console.log(`QR-WASH NEON V1 running at http://localhost:${PORT}`);
+  console.log(
+    `QR-WASH NEON V1 running at http://localhost:${PORT}`
+  );
 });
