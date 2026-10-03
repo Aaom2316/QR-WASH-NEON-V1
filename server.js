@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3000;
 const DEVICE_TOKEN = process.env.DEVICE_TOKEN || "ESP32-TEST-1234";
 const ADMIN_KEY = process.env.ADMIN_KEY || "DEV-ADMIN-1234";
 const SMS_BRIDGE_KEY = process.env.SMS_BRIDGE_KEY || "DEV-SMS-1234";
-const ONLINE_WINDOW_SECONDS = Number(process.env.ONLINE_WINDOW_SECONDS || 10);
+const ONLINE_WINDOW_SECONDS = Number(process.env.ONLINE_WINDOW_SECONDS || 30);
 
 if (!process.env.DATABASE_URL) {
   console.error("ERROR: DATABASE_URL is missing in .env");
