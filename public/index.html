@@ -159,6 +159,91 @@ function time(v){
     : "—";
 }
 
+
+/* =========================================================
+   ESP32 LAST ONLINE TIME
+   แสดงเวลาที่ ESP32 กลับมา ONLINE ครั้งล่าสุด
+   ไม่ให้เวลาเปลี่ยนตาม last_seen ขณะ ONLINE ต่อเนื่อง
+========================================================= */
+
+const DEVICE_RECONNECT_GAP_MS = 30000;
+
+function getStableDeviceSeen(){
+  return localStorage.getItem("qrwash_device_stable_seen") || "";
+}
+
+function setStableDeviceSeen(v){
+  if(v){
+    localStorage.setItem("qrwash_device_stable_seen", v);
+  }
+}
+
+function getLastDeviceOnlineState(){
+  return localStorage.getItem("qrwash_device_last_online") === "1";
+}
+
+function setLastDeviceOnlineState(v){
+  localStorage.setItem(
+    "qrwash_device_last_online",
+    v ? "1" : "0"
+  );
+}
+
+function stableDeviceSeen(currentLastSeen, isOnline){
+
+  if(!currentLastSeen){
+    return getStableDeviceSeen();
+  }
+
+  const oldSeen = getStableDeviceSeen();
+  const wasOnline = getLastDeviceOnlineState();
+
+  /* OFFLINE → เก็บเวลาเดิมไว้ */
+  if(!isOnline){
+    setLastDeviceOnlineState(false);
+    return oldSeen || currentLastSeen;
+  }
+
+  const currentMs = new Date(currentLastSeen).getTime();
+  const oldMs = oldSeen
+    ? new Date(oldSeen).getTime()
+    : NaN;
+
+  /*
+     ONLINE ครั้งแรก
+       → ใช้เวลานี้
+
+     OFFLINE → ONLINE
+       → เปลี่ยนเป็นเวลานี้
+
+     ONLINE ต่อเนื่อง
+       → ไม่เปลี่ยนเวลา
+
+     ถ้าหน้าเว็บถูกเปิดใหม่หลัง ESP32
+     กลับมา ONLINE แล้ว และ last_seen
+     ห่างจากค่าที่จำไว้เกิน 30 วินาที
+       → ถือว่าเป็นการกลับมา ONLINE ใหม่
+  */
+
+  if(
+    !oldSeen ||
+    !wasOnline ||
+    (
+      Number.isFinite(currentMs) &&
+      Number.isFinite(oldMs) &&
+      currentMs - oldMs > DEVICE_RECONNECT_GAP_MS
+    )
+  ){
+    setStableDeviceSeen(currentLastSeen);
+    setLastDeviceOnlineState(true);
+    return currentLastSeen;
+  }
+
+  setLastDeviceOnlineState(true);
+
+  return oldSeen;
+}
+
 function statusPill(s){
 
   const x = String(s || "").toUpperCase();
@@ -235,9 +320,14 @@ async function loadDashboard(){
           ? '<span class="status online">ONLINE</span>'
           : '<span class="status offline">OFFLINE</span>';
 
+      const stableSeen = stableDeviceSeen(
+        dev.last_seen,
+        !!dev.online
+      );
+
       document.getElementById("deviceSeen").textContent =
-        dev.last_seen
-          ? `ล่าสุด ${time(dev.last_seen)}`
+        stableSeen
+          ? `ล่าสุด ${time(stableSeen)}`
           : "ยังไม่เคยเชื่อมต่อ";
 
     }else{
@@ -356,9 +446,14 @@ async function loadDeviceStatus(){
        Last Seen
     =============================== */
 
+    const stableSeen = stableDeviceSeen(
+      dev.last_seen,
+      !!dev.online
+    );
+
     document.getElementById("deviceSeen").textContent =
-      dev.last_seen
-        ? `ล่าสุด ${time(dev.last_seen)}`
+      stableSeen
+        ? `ล่าสุด ${time(stableSeen)}`
         : "ยังไม่เคยเชื่อมต่อ";
 
 
