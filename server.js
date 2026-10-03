@@ -4,9 +4,9 @@ const { Pool } = require("pg");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DEVICE_TOKEN = process.env.DEVICE_TOKEN || "ESP32-TEST-1234";
-const ADMIN_KEY = process.env.ADMIN_KEY || "DEV-ADMIN-1234";
-const SMS_BRIDGE_KEY = process.env.SMS_BRIDGE_KEY || "DEV-SMS-1234";
+const DEVICE_TOKEN = process.env.DEVICE_TOKEN || "";
+const ADMIN_KEY = process.env.ADMIN_KEY || "";
+const SMS_BRIDGE_KEY = process.env.SMS_BRIDGE_KEY || "";
 const ONLINE_WINDOW_SECONDS = Number(process.env.ONLINE_WINDOW_SECONDS || 30);
 
 if (!process.env.DATABASE_URL) {
@@ -38,6 +38,32 @@ function requireAdmin(req, res, next) {
 function onlineFromLastSeen(lastSeen) {
   if (!lastSeen) return false;
   return (Date.now() - new Date(lastSeen).getTime()) <= ONLINE_WINDOW_SECONDS * 1000;
+}
+
+// ============================================================
+// MULTI DEVICE — รองรับ ESP32 ได้สูงสุด 4 เครื่อง
+// Token ของแต่ละเครื่องเก็บอยู่ใน devices.token
+// เครื่อง 1 ยังใช้ DEVICE_TOKEN ใน .env ได้เหมือนเดิม
+// ============================================================
+
+function getBearerToken(req) {
+  const auth = String(req.headers.authorization || "");
+  if (!auth.startsWith("Bearer ")) return "";
+  return auth.slice(7).trim();
+}
+
+async function getDeviceByToken(token) {
+  if (!token) return null;
+
+  const result = await pool.query(
+    `SELECT id, name, token, machine_id
+     FROM devices
+     WHERE token = $1
+     LIMIT 1`,
+    [token]
+  );
+
+  return result.rows[0] || null;
 }
 
 app.get("/api/health", async (req, res) => {
@@ -94,13 +120,27 @@ app.post("/api/test-payment", async (req, res) => {
       ]
     );
 
-    const deviceResult = await client.query(
-      `SELECT id, name
-       FROM devices
-       WHERE token = $1
-       LIMIT 1`,
-      [DEVICE_TOKEN]
-    );
+    // TEST PAYMENT:
+    // ส่ง deviceId มาได้เพื่อเลือกเครื่อง 1-4
+    // ถ้าไม่ส่ง จะใช้เครื่อง 1 ตามระบบเดิม
+    const requestedDeviceId = Number(req.body.deviceId);
+
+    const deviceResult =
+      Number.isInteger(requestedDeviceId) && requestedDeviceId > 0
+        ? await client.query(
+            `SELECT id, name
+             FROM devices
+             WHERE id = $1
+             LIMIT 1`,
+            [requestedDeviceId]
+          )
+        : await client.query(
+            `SELECT id, name
+             FROM devices
+             WHERE token = $1
+             LIMIT 1`,
+            [DEVICE_TOKEN]
+          );
 
     if (!deviceResult.rows.length) {
       throw new Error("ESP32 device not found in database");
@@ -154,7 +194,10 @@ const QR_SESSION_TIMEOUT_SECONDS =
 
 app.post("/api/qr/session", async (req, res) => {
 
-  if (req.headers.authorization !== `Bearer ${DEVICE_TOKEN}`) {
+  const deviceToken = getBearerToken(req);
+  const device = await getDeviceByToken(deviceToken);
+
+  if (!device) {
     return res.status(401).json({
       ok: false,
       error: "Unauthorized"
@@ -173,23 +216,6 @@ app.post("/api/qr/session", async (req, res) => {
         error: "QR amount ต้องเป็น 10, 20, 50 หรือ 100 บาท"
       });
     }
-
-    const deviceResult = await client.query(
-      `SELECT id, name, machine_id
-       FROM devices
-       WHERE token = $1
-       LIMIT 1`,
-      [DEVICE_TOKEN]
-    );
-
-    if (!deviceResult.rows.length) {
-      return res.status(404).json({
-        ok: false,
-        error: "Device not found"
-      });
-    }
-
-    const device = deviceResult.rows[0];
 
     await client.query("BEGIN");
 
@@ -287,7 +313,10 @@ app.post("/api/qr/session", async (req, res) => {
 
 app.post("/api/qr/session/cancel", async (req, res) => {
 
-  if (req.headers.authorization !== `Bearer ${DEVICE_TOKEN}`) {
+  const deviceToken = getBearerToken(req);
+  const device = await getDeviceByToken(deviceToken);
+
+  if (!device) {
     return res.status(401).json({
       ok: false,
       error: "Unauthorized"
@@ -301,16 +330,11 @@ app.post("/api/qr/session/cancel", async (req, res) => {
        SET status = 'CANCELLED'
        FROM commands c
        WHERE p.id = c.payment_id
-         AND c.device_id = (
-           SELECT id
-           FROM devices
-           WHERE token = $1
-           LIMIT 1
-         )
+         AND c.device_id = $1
          AND p.source = 'qr_session'
          AND p.status = 'WAITING'
        RETURNING p.id, p.transaction_key, p.amount, p.status`,
-      [DEVICE_TOKEN]
+      [device.id]
     );
 
     res.json({
@@ -463,7 +487,8 @@ app.post("/api/sms/receive", async (req, res) => {
       sender,
       rawMessage,
       receivedAt,
-      amount: bodyAmount
+      amount: bodyAmount,
+      deviceId: bodyDeviceId
     } = req.body || {};
 
     // --------------------------------------------------------
@@ -520,6 +545,22 @@ app.post("/api/sms/receive", async (req, res) => {
     console.log("Message:", rawMessage);
     console.log("========================================");
     console.log();
+
+    const smsDeviceId = Number(bodyDeviceId);
+
+    // เครื่อง 2-4 ต้องส่ง deviceId มาจาก SMS Bridge
+    // ถ้าไม่ส่ง จะใช้เครื่อง 1 ตามระบบเดิม
+    const resolvedSmsDeviceId =
+      Number.isInteger(smsDeviceId) && smsDeviceId > 0
+        ? smsDeviceId
+        : (await getDeviceByToken(DEVICE_TOKEN))?.id;
+
+    if (!resolvedSmsDeviceId) {
+      return res.status(400).json({
+        ok: false,
+        error: "ไม่พบ deviceId สำหรับ SMS Bridge"
+      });
+    }
 
     await client.query("BEGIN");
 
@@ -582,12 +623,7 @@ app.post("/api/sms/receive", async (req, res) => {
          AND p.status = 'WAITING'
          AND c.command_type = 'QR_WAIT'
          AND c.status = 'WAITING'
-         AND c.device_id = (
-           SELECT id
-           FROM devices
-           WHERE token = $1
-           LIMIT 1
-         )
+         AND c.device_id = $1
          AND p.amount = $2
          AND p.created_at >= NOW() -
              INTERVAL '${QR_SESSION_TIMEOUT_SECONDS} seconds'
@@ -595,7 +631,7 @@ app.post("/api/sms/receive", async (req, res) => {
        LIMIT 1
        FOR UPDATE OF p`,
       [
-        DEVICE_TOKEN,
+        resolvedSmsDeviceId,
         amount
       ]
     );
@@ -772,7 +808,9 @@ app.post("/api/sms/receive", async (req, res) => {
 
 app.get("/api/device/commands", async (req, res) => {
 
-  if (req.headers.authorization !== `Bearer ${DEVICE_TOKEN}`) {
+  const deviceToken = getBearerToken(req);
+
+  if (!deviceToken) {
     return res.status(401).json({
       ok: false,
       error: "Unauthorized"
@@ -791,7 +829,7 @@ app.get("/api/device/commands", async (req, res) => {
        WHERE token = $1
        LIMIT 1
        FOR UPDATE`,
-      [DEVICE_TOKEN]
+      [deviceToken]
     );
 
     if (!device.rows.length) {
@@ -871,7 +909,10 @@ app.get("/api/device/commands", async (req, res) => {
 
 app.post("/api/device/ack", async (req, res) => {
 
-  if (req.headers.authorization !== `Bearer ${DEVICE_TOKEN}`) {
+  const deviceToken = getBearerToken(req);
+  const device = await getDeviceByToken(deviceToken);
+
+  if (!device) {
     return res.status(401).json({
       ok: false,
       error: "Unauthorized"
@@ -899,11 +940,13 @@ app.post("/api/device/ack", async (req, res) => {
            completed_at = NOW(),
            device_message = $2
        WHERE id = $3
+         AND device_id = $4
        RETURNING *`,
       [
         success ? "DONE" : "FAILED",
         message || "",
-        commandId
+        commandId,
+        device.id
       ]
     );
 
