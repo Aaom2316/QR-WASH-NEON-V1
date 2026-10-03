@@ -162,11 +162,9 @@ function time(v){
 
 /* =========================================================
    ESP32 LAST ONLINE TIME
-   แสดงเวลาที่ ESP32 กลับมา ONLINE ครั้งล่าสุด
-   ไม่ให้เวลาเปลี่ยนตาม last_seen ขณะ ONLINE ต่อเนื่อง
+   แสดงเวลา "เริ่ม ONLINE ครั้งล่าสุด"
+   ไม่เปลี่ยนตาม last_seen ที่วิ่งทุกวินาที
 ========================================================= */
-
-const DEVICE_RECONNECT_GAP_MS = 30000;
 
 function getStableDeviceSeen(){
   return localStorage.getItem("qrwash_device_stable_seen") || "";
@@ -191,57 +189,45 @@ function setLastDeviceOnlineState(v){
 
 function stableDeviceSeen(currentLastSeen, isOnline){
 
-  if(!currentLastSeen){
-    return getStableDeviceSeen();
-  }
-
   const oldSeen = getStableDeviceSeen();
   const wasOnline = getLastDeviceOnlineState();
 
-  /* OFFLINE → เก็บเวลาเดิมไว้ */
+  if(!currentLastSeen){
+    return oldSeen;
+  }
+
+  /*
+     OFFLINE:
+     เก็บเวลา ONLINE ครั้งล่าสุดไว้เหมือนเดิม
+  */
   if(!isOnline){
+
     setLastDeviceOnlineState(false);
+
     return oldSeen || currentLastSeen;
   }
 
-  const currentMs = new Date(currentLastSeen).getTime();
-  const oldMs = oldSeen
-    ? new Date(oldSeen).getTime()
-    : NaN;
-
   /*
-     ONLINE ครั้งแรก
-       → ใช้เวลานี้
+     ONLINE:
 
-     OFFLINE → ONLINE
-       → เปลี่ยนเป็นเวลานี้
+     1. ยังไม่เคยมีเวลา
+        → บันทึกเวลานี้
 
-     ONLINE ต่อเนื่อง
-       → ไม่เปลี่ยนเวลา
+     2. เพิ่งเปลี่ยนจาก OFFLINE → ONLINE
+        → บันทึก last_seen ใหม่
 
-     ถ้าหน้าเว็บถูกเปิดใหม่หลัง ESP32
-     กลับมา ONLINE แล้ว และ last_seen
-     ห่างจากค่าที่จำไว้เกิน 30 วินาที
-       → ถือว่าเป็นการกลับมา ONLINE ใหม่
+     3. ONLINE ต่อเนื่อง
+        → ใช้เวลาเดิม ห้ามเปลี่ยน
   */
 
-  if(
-    !oldSeen ||
-    !wasOnline ||
-    (
-      Number.isFinite(currentMs) &&
-      Number.isFinite(oldMs) &&
-      currentMs - oldMs > DEVICE_RECONNECT_GAP_MS
-    )
-  ){
+  if(!oldSeen || !wasOnline){
+
     setStableDeviceSeen(currentLastSeen);
-    setLastDeviceOnlineState(true);
-    return currentLastSeen;
   }
 
   setLastDeviceOnlineState(true);
 
-  return oldSeen;
+  return getStableDeviceSeen();
 }
 
 function statusPill(s){
@@ -447,9 +433,9 @@ async function loadDeviceStatus(){
     =============================== */
 
     const stableSeen = stableDeviceSeen(
-      dev.last_seen,
-      !!dev.online
-    );
+        dev.last_seen,
+        !!dev.online
+      );
 
     document.getElementById("deviceSeen").textContent =
       stableSeen
