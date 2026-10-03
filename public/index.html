@@ -297,31 +297,23 @@ async function loadDashboard(){
        แต่สถานะจริงจะถูกอัปเดตแยกทุก 1 วินาที
     ===================================================== */
 
-    const dev = d.devices[0];
+    const devices = Array.isArray(d.devices) ? d.devices : [];
+    const onlineDevices = devices.filter(dev => dev.online);
+    const latestDevice = devices
+      .filter(dev => dev.last_seen)
+      .sort((a,b) => new Date(b.last_seen) - new Date(a.last_seen))[0];
 
-    if(dev){
+    document.getElementById("deviceStatus").innerHTML =
+      devices.length
+        ? `<span class="status ${onlineDevices.length ? 'online':'offline'}">
+            ${onlineDevices.length}/${devices.length} ONLINE
+           </span>`
+        : "—";
 
-      document.getElementById("deviceStatus").innerHTML =
-        dev.online
-          ? '<span class="status online">ONLINE</span>'
-          : '<span class="status offline">OFFLINE</span>';
-
-      const stableSeen = stableDeviceSeen(
-        dev.last_seen,
-        !!dev.online
-      );
-
-      document.getElementById("deviceSeen").textContent =
-        stableSeen
-          ? `ล่าสุด ${time(stableSeen)}`
-          : "ยังไม่เคยเชื่อมต่อ";
-
-    }else{
-
-      document.getElementById("deviceStatus").textContent = "—";
-      document.getElementById("deviceSeen").textContent =
-        "ยังไม่เคยเชื่อมต่อ";
-    }
+    document.getElementById("deviceSeen").textContent =
+      latestDevice && latestDevice.last_seen
+        ? `ล่าสุด ${time(latestDevice.last_seen)}`
+        : "ยังไม่มีอุปกรณ์เชื่อมต่อ";
 
 
     /* Stats */
@@ -404,43 +396,26 @@ async function loadDeviceStatus(){
         ? d
         : (Array.isArray(d.devices) ? d.devices : []);
 
-    const dev = devices[0];
-
-    if(!dev){
-
-      document.getElementById("deviceStatus").innerHTML =
-        '<span class="status offline">OFFLINE</span>';
-
-      document.getElementById("deviceSeen").textContent =
-        "ยังไม่พบอุปกรณ์";
-
-      return;
-    }
-
+    const onlineDevices = devices.filter(dev => dev.online);
+    const latestDevice = devices
+      .filter(dev => dev.last_seen)
+      .sort((a,b) => new Date(b.last_seen) - new Date(a.last_seen))[0];
 
     /* ===============================
-       สถานะ ESP32
+       สถานะ ESP32 รวมทุกเครื่อง
     =============================== */
 
     document.getElementById("deviceStatus").innerHTML =
-      dev.online
-        ? '<span class="status online">ONLINE</span>'
+      devices.length
+        ? `<span class="status ${onlineDevices.length ? 'online':'offline'}">
+            ${onlineDevices.length}/${devices.length} ONLINE
+           </span>`
         : '<span class="status offline">OFFLINE</span>';
 
-
-    /* ===============================
-       Last Seen
-    =============================== */
-
-    const stableSeen = stableDeviceSeen(
-        dev.last_seen,
-        !!dev.online
-      );
-
     document.getElementById("deviceSeen").textContent =
-      stableSeen
-        ? `ล่าสุด ${time(stableSeen)}`
-        : "ยังไม่เคยเชื่อมต่อ";
+      latestDevice && latestDevice.last_seen
+        ? `ล่าสุด ${time(latestDevice.last_seen)}`
+        : "ยังไม่มีอุปกรณ์เชื่อมต่อ";
 
 
     /* ===============================
@@ -451,16 +426,21 @@ async function loadDeviceStatus(){
 
 
     /*
-      อัปเดตสถานะปุ่มเครื่องด้วย
+      อัปเดตสถานะเครื่องตาม machine_id
       โดยไม่โหลด Dashboard ใหญ่ใหม่
     */
 
     const machineStatus =
       document.querySelectorAll(".machine .machine-head .status");
 
-    machineStatus.forEach(el => {
+    machineStatus.forEach((el, index) => {
+      const machineId = el.dataset.machineId;
 
-      if(dev.online){
+      const dev = devices.find(
+        d => String(d.machine_id) === String(machineId)
+      );
+
+      if(dev && dev.online){
 
         el.className = "status online";
         el.textContent = "พร้อมใช้งาน";
@@ -468,10 +448,11 @@ async function loadDeviceStatus(){
       }else{
 
         el.className = "status offline";
-        el.textContent = "ESP32 OFFLINE";
+        el.textContent = dev
+          ? "ESP32 OFFLINE"
+          : "ยังไม่พบ ESP32";
 
       }
-
     });
 
   }catch(e){
@@ -497,7 +478,7 @@ async function loadDeviceStatus(){
 
 function renderMachines(ms,ds){
 
-  const dev = ds[0];
+  const devices = Array.isArray(ds) ? ds : [];
 
   if(!ms.length){
 
@@ -508,7 +489,16 @@ function renderMachines(ms,ds){
   }
 
   document.getElementById("machines").innerHTML =
-    ms.map(m => `
+    ms.map(m => {
+
+      const dev = devices.find(
+        d => String(d.machine_id) === String(m.id)
+      );
+
+      const online = !!(dev && dev.online);
+      const deviceId = dev ? dev.id : 0;
+
+      return `
 
       <div class="machine">
 
@@ -516,10 +506,13 @@ function renderMachines(ms,ds){
 
           <h3>${esc(m.name)}</h3>
 
-          <span class="status ${dev && dev.online ? 'online':'offline'}">
-            ${dev && dev.online
+          <span
+            class="status ${online ? 'online':'offline'}"
+            data-machine-id="${esc(m.id)}"
+          >
+            ${online
               ? 'พร้อมใช้งาน'
-              : 'ESP32 OFFLINE'}
+              : (dev ? 'ESP32 OFFLINE' : 'ยังไม่พบ ESP32')}
           </span>
 
         </div>
@@ -528,35 +521,39 @@ function renderMachines(ms,ds){
           class="muted"
           style="margin-top:7px"
         >
-          อัตรา POC: 10 บาท = 1 Pulse
+          อัตรา POC: ${Number(m.pulse_per_10_baht || 1)} Pulse / 10 บาท
         </div>
 
         <div class="buttons">
 
           <button
             class="pulse-btn"
-            onclick="sendPulse(${dev?.id || 0},1,10)"
+            onclick="sendPulse(${deviceId},1,10)"
+            ${deviceId ? "" : "disabled"}
           >
             10 บาท<br>1 Pulse
           </button>
 
           <button
             class="pulse-btn"
-            onclick="sendPulse(${dev?.id || 0},2,20)"
+            onclick="sendPulse(${deviceId},2,20)"
+            ${deviceId ? "" : "disabled"}
           >
             20 บาท<br>2 Pulse
           </button>
 
           <button
             class="pulse-btn"
-            onclick="sendPulse(${dev?.id || 0},5,50)"
+            onclick="sendPulse(${deviceId},5,50)"
+            ${deviceId ? "" : "disabled"}
           >
             50 บาท<br>5 Pulse
           </button>
 
           <button
             class="pulse-btn"
-            onclick="sendPulse(${dev?.id || 0},10,100)"
+            onclick="sendPulse(${deviceId},10,100)"
+            ${deviceId ? "" : "disabled"}
           >
             100 บาท<br>10 Pulse
           </button>
@@ -565,7 +562,7 @@ function renderMachines(ms,ds){
 
       </div>
 
-    `).join("");
+    `}).join("");
 }
 
 
