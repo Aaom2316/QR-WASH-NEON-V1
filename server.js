@@ -1087,12 +1087,16 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
           p.transaction_key,
           p.status AS payment_status
         FROM commands c
-        JOIN payments p
+        LEFT JOIN payments p
           ON p.id = c.payment_id
         JOIN devices d
           ON d.id = c.device_id
-        WHERE p.source = 'kbank_sms'
-          AND c.command_type = 'PULSE'
+        WHERE
+          c.command_type = 'MANUAL'
+          OR (
+            c.command_type = 'PULSE'
+            AND p.source IN ('kbank_sms', 'test')
+          )
         ORDER BY c.created_at DESC
         LIMIT 50
       `)
