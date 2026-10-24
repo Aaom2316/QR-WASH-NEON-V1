@@ -819,6 +819,22 @@ function initReportInputs(){
   document.getElementById("reportYear").value = dateValue.slice(0,4);
 }
 
+function reportStatusText(status){
+  const value = String(status || "").toUpperCase();
+  const labels = {
+    DONE: "สำเร็จ",
+    FAILED: "ล้มเหลว",
+    SENT: "ส่งแล้ว",
+    QUEUED: "รอส่ง",
+    RECEIVED: "รับแล้ว",
+    WAITING: "รอชำระ",
+    MATCHED: "จับคู่แล้ว",
+    CANCELLED: "ยกเลิก",
+    EXPIRED: "หมดอายุ"
+  };
+  return labels[value] || status || "—";
+}
+
 async function loadReport(){
   if(!adminKey){
     document.getElementById("reportMessage").innerHTML = '<span class="err">กรุณาใส่ Admin Key ก่อน</span>';
@@ -850,7 +866,7 @@ async function loadReport(){
       body.innerHTML = d.rows.length ? d.rows.map(row => `<tr>
         <td>${time(row.created_at)}</td><td>${esc(row.device_name || "—")}</td>
         <td>${esc(row.transaction_key || "—")}</td><td>${money(row.amount)} บาท</td>
-        <td>${Number(row.pulse_count || 0)}</td><td>${esc(row.command_status || row.payment_status || "—")}</td>
+        <td>${Number(row.pulse_count || 0)}</td><td>${esc(reportStatusText(row.command_status || row.payment_status))}</td>
       </tr>`).join("") : '<tr><td colspan="6">ไม่มีรายการในวันที่เลือก</td></tr>';
     }else{
       head.innerHTML = `<tr><th>${period === "month" ? "วันที่" : "เดือน"}</th><th>จำนวนรายการ</th><th>ยอดขายรวม</th><th>จำนวน Pulse</th><th>ยอดเฉลี่ย</th></tr>`;
