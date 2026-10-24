@@ -1358,6 +1358,111 @@ app.get("/api/qr/config", (req, res) => {
 });
 
 
+
+// ============================================================
+// ADMIN SALES REPORT — รายวัน / รายเดือน / รายปี
+// ใช้ข้อมูลการชำระเงินจริงจาก payments + คำสั่ง PULSE
+// เขตเวลารายงาน: Asia/Bangkok
+// ============================================================
+app.get("/api/admin/reports", requireAdmin, async (req, res) => {
+  try {
+    const period = String(req.query.period || "day");
+    let startDate = "";
+    let endDate = "";
+
+    if (period === "day") {
+      const value = String(req.query.date || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return res.status(400).json({ ok: false, error: "กรุณาเลือกวันที่ให้ถูกต้อง (YYYY-MM-DD)" });
+      }
+      const d = new Date(value + "T00:00:00Z");
+      if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
+        return res.status(400).json({ ok: false, error: "วันที่ไม่ถูกต้อง" });
+      }
+      startDate = value;
+      d.setUTCDate(d.getUTCDate() + 1);
+      endDate = d.toISOString().slice(0, 10);
+    } else if (period === "month") {
+      const value = String(req.query.month || "");
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) {
+        return res.status(400).json({ ok: false, error: "กรุณาเลือกเดือนให้ถูกต้อง (YYYY-MM)" });
+      }
+      const [year, month] = value.split("-").map(Number);
+      startDate = `${value}-01`;
+      endDate = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    } else if (period === "year") {
+      const value = String(req.query.year || "");
+      if (!/^\d{4}$/.test(value) || Number(value) < 2000 || Number(value) > 2100) {
+        return res.status(400).json({ ok: false, error: "กรุณาเลือกปี ค.ศ. ให้ถูกต้อง" });
+      }
+      startDate = `${value}-01-01`;
+      endDate = `${Number(value) + 1}-01-01`;
+    } else {
+      return res.status(400).json({ ok: false, error: "period ต้องเป็น day, month หรือ year" });
+    }
+
+    const range = `p.created_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+                   AND p.created_at < ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')`;
+
+    const summaryResult = await pool.query(
+      `SELECT
+         COUNT(DISTINCT p.id)::int AS transactions,
+         COALESCE(SUM(p.amount), 0)::numeric AS revenue,
+         COALESCE(SUM(c.pulse_count), 0)::int AS pulses
+       FROM payments p
+       JOIN commands c ON c.payment_id = p.id AND c.command_type = 'PULSE'
+       WHERE ${range}
+         AND p.source = 'kbank_sms'`,
+      [startDate, endDate]
+    );
+
+    let rowsResult;
+    if (period === "day") {
+      rowsResult = await pool.query(
+        `SELECT p.id AS payment_id, p.transaction_key, p.amount,
+                p.created_at, p.status AS payment_status,
+                c.pulse_count, c.status AS command_status,
+                d.name AS device_name
+         FROM payments p
+         JOIN commands c ON c.payment_id = p.id AND c.command_type = 'PULSE'
+         LEFT JOIN devices d ON d.id = c.device_id
+         WHERE ${range} AND p.source = 'kbank_sms'
+         ORDER BY p.created_at DESC`,
+        [startDate, endDate]
+      );
+    } else {
+      const bucket = period === "month" ? "day" : "month";
+      const dateExpression = period === "month"
+        ? `(p.created_at AT TIME ZONE 'Asia/Bangkok')::date::text`
+        : `to_char(p.created_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')`;
+      rowsResult = await pool.query(
+        `SELECT ${dateExpression} AS period_label,
+                COUNT(DISTINCT p.id)::int AS transactions,
+                COALESCE(SUM(p.amount), 0)::numeric AS revenue,
+                COALESCE(SUM(c.pulse_count), 0)::int AS pulses
+         FROM payments p
+         JOIN commands c ON c.payment_id = p.id AND c.command_type = 'PULSE'
+         WHERE ${range} AND p.source = 'kbank_sms'
+         GROUP BY ${period === "month" ? "(p.created_at AT TIME ZONE 'Asia/Bangkok')::date" : "to_char(p.created_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')"}
+         ORDER BY period_label ${bucket === "day" ? "ASC" : "ASC"}`,
+        [startDate, endDate]
+      );
+    }
+
+    res.json({
+      ok: true,
+      period,
+      startDate,
+      endDate,
+      summary: summaryResult.rows[0],
+      rows: rowsResult.rows
+    });
+  } catch (e) {
+    console.error("Admin sales report error:", e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(
     `QR-WASH NEON V1 running at http://localhost:${PORT}`
