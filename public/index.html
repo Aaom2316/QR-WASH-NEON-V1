@@ -850,7 +850,7 @@ async function loadReport(){
       body.innerHTML = d.rows.length ? d.rows.map(row => `<tr>
         <td>${time(row.created_at)}</td><td>${esc(row.device_name || "—")}</td>
         <td>${esc(row.transaction_key || "—")}</td><td>${money(row.amount)} บาท</td>
-        <td>${Number(row.pulse_count || 0)}</td><td>${esc(row.command_status || row.payment_status || "—")}</td>
+        <td>${Number(row.pulse_count || 0)}</td><td>${esc((String(row.command_status || row.payment_status || "—").toUpperCase() === "DONE" || String(row.command_status || row.payment_status || "—").toUpperCase() === "COMPLETED") ? "สำเร็จ" : (String(row.command_status || row.payment_status || "—").toUpperCase() === "FAILED" ? "ไม่สำเร็จ" : (String(row.command_status || row.payment_status || "—").toUpperCase() === "QUEUED" ? "รอส่ง" : (String(row.command_status || row.payment_status || "—").toUpperCase() === "SENT" ? "ส่งแล้ว" : (row.command_status || row.payment_status || "—"))))}</td>
       </tr>`).join("") : '<tr><td colspan="6">ไม่มีรายการในวันที่เลือก</td></tr>';
     }else{
       head.innerHTML = `<tr><th>${period === "month" ? "วันที่" : "เดือน"}</th><th>จำนวนรายการ</th><th>ยอดขายรวม</th><th>จำนวน Pulse</th><th>ยอดเฉลี่ย</th></tr>`;
