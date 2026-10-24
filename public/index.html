@@ -20,6 +20,7 @@
 
     <div class="login">
       <a class="btn" href="/qr.html" target="_blank">📱 หน้ารับชำระ QR</a>
+      <button class="btn" onclick="document.getElementById('salesReport').scrollIntoView({behavior:'smooth'})">📊 รายงานยอดขาย</button>
       <input id="adminKey" type="password" placeholder="Admin Key">
       <button class="btn" onclick="saveKey()">เข้าใช้งาน</button>
     </div>
@@ -70,6 +71,49 @@
       <div id="devices">กำลังโหลด...</div>
     </div>
 
+  </div>
+
+  <div class="card" id="salesReport">
+    <div class="toolbar">
+      <h2>📊 รายงานยอดขาย</h2>
+      <button class="btn" onclick="loadReport()">ค้นหารายงาน</button>
+    </div>
+    <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin:12px 0 18px">
+      <div style="min-width:150px">
+        <label class="label" for="reportPeriod">รูปแบบรายงาน</label>
+        <select id="reportPeriod" class="btn" style="display:block;width:100%;margin-top:5px" onchange="updateReportInputs()">
+          <option value="day">รายวัน</option>
+          <option value="month">รายเดือน</option>
+          <option value="year">รายปี</option>
+        </select>
+      </div>
+      <div id="reportDateWrap" style="min-width:170px">
+        <label class="label" for="reportDate">เลือกวันที่</label>
+        <input id="reportDate" class="btn" type="date" style="display:block;width:100%;margin-top:5px">
+      </div>
+      <div id="reportMonthWrap" style="min-width:170px;display:none">
+        <label class="label" for="reportMonth">เลือกเดือน</label>
+        <input id="reportMonth" class="btn" type="month" style="display:block;width:100%;margin-top:5px">
+      </div>
+      <div id="reportYearWrap" style="min-width:130px;display:none">
+        <label class="label" for="reportYear">เลือกปี (ค.ศ.)</label>
+        <input id="reportYear" class="btn" type="number" min="2000" max="2100" style="display:block;width:100%;margin-top:5px">
+      </div>
+    </div>
+    <div class="cards" style="margin-bottom:18px">
+      <div class="card stat" style="margin:0"><div class="label">ยอดขายรวม</div><div id="reportRevenue" class="value">0.00</div><div class="unit">บาท</div></div>
+      <div class="card stat" style="margin:0"><div class="label">จำนวนรายการ</div><div id="reportTransactions" class="value">0</div><div class="unit">รายการ</div></div>
+      <div class="card stat" style="margin:0"><div class="label">จำนวน Pulse</div><div id="reportPulses" class="value">0</div><div class="unit">Pulse</div></div>
+      <div class="card stat" style="margin:0"><div class="label">ยอดเฉลี่ยต่อรายการ</div><div id="reportAverage" class="value">0.00</div><div class="unit">บาท / รายการ</div></div>
+    </div>
+    <div id="reportMessage" class="msg"></div>
+    <div class="table-wrap">
+      <table>
+        <thead id="reportHead"><tr><th>เวลา</th><th>เครื่อง</th><th>เลขอ้างอิง</th><th>ยอดเงิน</th><th>Pulse</th><th>สถานะ</th></tr></thead>
+        <tbody id="reportRows"><tr><td colspan="6">เลือกช่วงเวลาแล้วกดค้นหารายงาน</td></tr></tbody>
+      </table>
+    </div>
+    <div class="small" style="margin-top:10px">รายงานนี้นับรายการ KBank QR ที่มีคำสั่ง PULSE ในฐานข้อมูล โดยใช้เขตเวลาไทย</div>
   </div>
 
   <div class="card">
@@ -757,10 +801,78 @@ async function sendPulse(
 
 
 /* =========================================================
+   SALES REPORT — รายวัน / รายเดือน / รายปี
+========================================================= */
+function updateReportInputs(){
+  const period = document.getElementById("reportPeriod").value;
+  document.getElementById("reportDateWrap").style.display = period === "day" ? "block" : "none";
+  document.getElementById("reportMonthWrap").style.display = period === "month" ? "block" : "none";
+  document.getElementById("reportYearWrap").style.display = period === "year" ? "block" : "none";
+}
+
+function initReportInputs(){
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  const dateValue = localDate.toISOString().slice(0,10);
+  document.getElementById("reportDate").value = dateValue;
+  document.getElementById("reportMonth").value = dateValue.slice(0,7);
+  document.getElementById("reportYear").value = dateValue.slice(0,4);
+}
+
+async function loadReport(){
+  if(!adminKey){
+    document.getElementById("reportMessage").innerHTML = '<span class="err">กรุณาใส่ Admin Key ก่อน</span>';
+    return;
+  }
+  const period = document.getElementById("reportPeriod").value;
+  const params = new URLSearchParams({period});
+  if(period === "day") params.set("date", document.getElementById("reportDate").value);
+  if(period === "month") params.set("month", document.getElementById("reportMonth").value);
+  if(period === "year") params.set("year", document.getElementById("reportYear").value);
+  const message = document.getElementById("reportMessage");
+  message.textContent = "กำลังโหลดรายงาน...";
+  try{
+    const r = await fetch(`/api/admin/reports?${params.toString()}`, {headers:headers(), cache:"no-store"});
+    const d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.error || "โหลดรายงานไม่สำเร็จ");
+    const s = d.summary || {};
+    const revenue = Number(s.revenue || 0);
+    const transactions = Number(s.transactions || 0);
+    document.getElementById("reportRevenue").textContent = money(revenue);
+    document.getElementById("reportTransactions").textContent = transactions.toLocaleString("th-TH");
+    document.getElementById("reportPulses").textContent = Number(s.pulses || 0).toLocaleString("th-TH");
+    document.getElementById("reportAverage").textContent = money(transactions ? revenue / transactions : 0);
+
+    const head = document.getElementById("reportHead");
+    const body = document.getElementById("reportRows");
+    if(period === "day"){
+      head.innerHTML = '<tr><th>เวลา</th><th>เครื่อง</th><th>เลขอ้างอิง</th><th>ยอดเงิน</th><th>Pulse</th><th>สถานะ</th></tr>';
+      body.innerHTML = d.rows.length ? d.rows.map(row => `<tr>
+        <td>${time(row.created_at)}</td><td>${esc(row.device_name || "—")}</td>
+        <td>${esc(row.transaction_key || "—")}</td><td>${money(row.amount)} บาท</td>
+        <td>${Number(row.pulse_count || 0)}</td><td>${esc(row.command_status || row.payment_status || "—")}</td>
+      </tr>`).join("") : '<tr><td colspan="6">ไม่มีรายการในวันที่เลือก</td></tr>';
+    }else{
+      head.innerHTML = `<tr><th>${period === "month" ? "วันที่" : "เดือน"}</th><th>จำนวนรายการ</th><th>ยอดขายรวม</th><th>จำนวน Pulse</th><th>ยอดเฉลี่ย</th></tr>`;
+      body.innerHTML = d.rows.length ? d.rows.map(row => {
+        const count = Number(row.transactions || 0);
+        const total = Number(row.revenue || 0);
+        return `<tr><td>${esc(row.period_label || "—")}</td><td>${count.toLocaleString("th-TH")}</td><td>${money(total)} บาท</td><td>${Number(row.pulses || 0).toLocaleString("th-TH")}</td><td>${money(count ? total/count : 0)} บาท</td></tr>`;
+      }).join("") : `<tr><td colspan="5">ไม่มีรายการใน${period === "month" ? "เดือน" : "ปี"}ที่เลือก</td></tr>`;
+    }
+    message.innerHTML = '<span class="ok">โหลดรายงานสำเร็จ</span>';
+  }catch(e){
+    message.innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
+}
+
+/* =========================================================
    START
 ========================================================= */
 
 /* โหลด Dashboard หลัก */
+initReportInputs();
+updateReportInputs();
 loadDashboard();
 
 /*
