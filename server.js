@@ -190,7 +190,7 @@ app.post("/api/test-payment", async (req, res) => {
 const QR_ALLOWED_AMOUNTS = [10, 20, 50, 100];
 
 const QR_SESSION_TIMEOUT_SECONDS =
-  Number(process.env.QR_SESSION_TIMEOUT_SECONDS || 90);
+  Number(process.env.QR_SESSION_TIMEOUT_SECONDS || 120);
 
 app.post("/api/qr/session", async (req, res) => {
 
