@@ -437,7 +437,6 @@ app.post("/api/sms/test", async (req, res) => {
 // ============================================================
 
 function parseKBankAmount(rawMessage) {
-
   const text = String(rawMessage || "")
     .replace(/,/g, "")
     .replace(/\u00A0/g, " ")
@@ -446,24 +445,28 @@ function parseKBankAmount(rawMessage) {
   // รองรับ:
   // เงินเข้า 20.00
   // เงินเข้า20.00
-  // เงินเข้า 20
   // เงิน เข้า 20.00
+  // รับโอนจาก X-9704 20.00
+  // รับโอนจาก X-6418 10.00
 
-  const match = text.match(
-    /เงิน\s*เข้า\s*([0-9]+(?:\.[0-9]{1,2})?)/i
-  );
+  const patterns = [
+    /เงิน\s*เข้า\s*([0-9]+(?:\.[0-9]{1,2})?)/i,
+    /รับโอนจาก\s+.*?\s+([0-9]+\.[0-9]{2})(?=\s|$)/i
+  ];
 
-  if (!match) return null;
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
 
-  const amount = Number(match[1]);
+    const amount = Number(match[1]);
 
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return null;
+    if (Number.isFinite(amount) && amount > 0) {
+      return amount;
+    }
   }
 
-  return amount;
+  return null;
 }
-
 
 app.post("/api/sms/receive", async (req, res) => {
 
