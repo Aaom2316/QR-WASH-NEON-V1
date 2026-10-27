@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QR-WASH NEON V1 • Admin</title>
 <style>
-*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:#f4f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:20px}.brand h1{margin:0;font-size:28px}.brand p{margin:5px 0 0;color:#6b7280}.login{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.login input{width:190px}.card{background:#fff;border:1px solid #e4e8ef;border-radius:16px;padding:18px;box-shadow:0 4px 16px #1720330b;margin-bottom:18px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.stat{min-height:115px}.label{color:#667085;font-size:14px}.value{font-size:30px;font-weight:700;margin-top:12px}.unit{font-size:14px;color:#667085}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.machine{border:1px solid #e5e7eb;border-radius:14px;padding:16px}.machine-head{display:flex;justify-content:space-between;align-items:center}.machine h3{margin:0}.status{padding:6px 10px;border-radius:999px;font-size:13px;font-weight:bold}.online{background:#dcfce7;color:#166534}.offline{background:#fee2e2;color:#991b1b}.buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:15px}.pulse-btn{border:0;border-radius:12px;padding:14px 8px;background:#172033;color:white;font-weight:bold;cursor:pointer}.pulse-btn:hover{opacity:.88}.device-row{padding:12px 0;border-bottom:1px solid #edf0f4}.device-row:last-child{border-bottom:0}.device-name{font-weight:bold}.muted{color:#667085;font-size:13px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid #edf0f4;font-size:14px}th{color:#667085;background:#fafbfc}.pill{display:inline-block;padding:5px 8px;border-radius:999px;font-size:12px;font-weight:bold}.done{background:#dcfce7;color:#166534}.sent{background:#dbeafe;color:#1d4ed8}.queued{background:#fef3c7;color:#92400e}.failed{background:#fee2e2;color:#991b1b}.received{background:#e0e7ff;color:#3730a3}.manual{background:#f3e8ff;color:#7e22ce}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}.btn{border:1px solid #d0d5dd;background:#fff;border-radius:10px;padding:9px 13px;cursor:pointer}.danger{color:#b42318}.msg{margin-top:10px;min-height:20px;font-size:14px}.ok{color:#15803d}.err{color:#b42318}.small{font-size:12px;color:#667085}@media(max-width:850px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.login{width:100%}.login input{flex:1}}@media(max-width:500px){.wrap{padding:12px}.cards{grid-template-columns:1fr}.buttons{grid-template-columns:repeat(2,1fr)}}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:#f4f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:20px}.brand h1{margin:0;font-size:28px}.brand p{margin:5px 0 0;color:#6b7280}.login{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.login input{width:190px}.card{background:#fff;border:1px solid #e4e8ef;border-radius:16px;padding:18px;box-shadow:0 4px 16px #1720330b;margin-bottom:18px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.stat{min-height:115px}.label{color:#667085;font-size:14px}.value{font-size:30px;font-weight:700;margin-top:12px}.unit{font-size:14px;color:#667085}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.machine{border:1px solid #e5e7eb;border-radius:14px;padding:16px}.machine-head{display:flex;justify-content:space-between;align-items:center}.machine h3{margin:0}.status{padding:6px 10px;border-radius:999px;font-size:13px;font-weight:bold}.online{background:#dcfce7;color:#166534}.offline{background:#fee2e2;color:#991b1b}.buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:15px}.pulse-btn{border:0;border-radius:12px;padding:14px 8px;background:#172033;color:white;font-weight:bold;cursor:pointer}.pulse-btn:hover{opacity:.88}.device-row{padding:12px 0;border-bottom:1px solid #edf0f4}.device-row:last-child{border-bottom:0}.device-name{font-weight:bold}.muted{color:#667085;font-size:13px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid #edf0f4;font-size:14px}th{color:#667085;background:#fafbfc}.pill{display:inline-block;padding:5px 8px;border-radius:999px;font-size:12px;font-weight:bold}.done{background:#dcfce7;color:#166534}.sent{background:#dbeafe;color:#1d4ed8}.queued{background:#fef3c7;color:#92400e}.failed{background:#fee2e2;color:#991b1b}.received{background:#e0e7ff;color:#3730a3}.manual{background:#f3e8ff;color:#7e22ce}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}.btn{border:1px solid #d0d5dd;background:#fff;border-radius:10px;padding:9px 13px;cursor:pointer}.danger{color:#b42318}.msg{margin-top:10px;min-height:20px;font-size:14px}.ok{color:#15803d}.err{color:#b42318}.small{font-size:12px;color:#667085}.cash-machine{border:1px solid #e4e8ef;border-radius:14px;padding:16px;background:#fff}.cash-machine h3{margin:0 0 12px}.cash-values{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.cash-value{background:#f8fafc;border-radius:10px;padding:12px}.cash-value .label{font-size:12px}.cash-value .value{font-size:22px;margin-top:7px}.cash-updated{margin-top:10px;font-size:12px;color:#667085}@media(max-width:850px){.cash-values{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:850px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.login{width:100%}.login input{flex:1}}@media(max-width:500px){.wrap{padding:12px}.cards{grid-template-columns:1fr}.buttons{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 
@@ -52,6 +52,18 @@
       <div class="unit">รายการ / Pulse</div>
     </div>
 
+  </div>
+
+  <div class="card" id="plcCashSection">
+    <div class="toolbar">
+      <h2>💰 ยอดเงินจาก PLC</h2>
+      <button class="btn" onclick="loadPlcCashTotals()">รีเฟรชยอดเงิน</button>
+    </div>
+    <div class="small" style="margin:8px 0 14px">ดึงข้อมูลจากตาราง plc_cash_totals • รีเฟรชอัตโนมัติทุก 5 วินาที</div>
+    <div id="plcCashMessage" class="msg">กำลังโหลดข้อมูล...</div>
+    <div id="plcCashMachines" class="cards" style="grid-template-columns:1fr;gap:12px">
+      <div class="muted">กำลังโหลดข้อมูลยอดเงิน PLC...</div>
+    </div>
   </div>
 
   <div class="grid">
@@ -801,6 +813,49 @@ async function sendPulse(
 
 
 /* =========================================================
+   PLC CASH TOTALS — ยอดเงินจาก D100-D103
+   ต้องมี Server API: GET /api/admin/plc-cash-totals
+========================================================= */
+let plcCashBusy = false;
+
+async function loadPlcCashTotals(){
+  if(!adminKey || plcCashBusy) return;
+  plcCashBusy = true;
+  const msg = document.getElementById("plcCashMessage");
+  try{
+    const r = await fetch("/api/admin/plc-cash-totals", {
+      headers: headers(),
+      cache: "no-store"
+    });
+    const d = await r.json();
+    if(!r.ok || d.ok === false) throw new Error(d.error || "โหลดข้อมูลยอดเงิน PLC ไม่สำเร็จ");
+    const rows = Array.isArray(d.rows) ? d.rows : (Array.isArray(d.data) ? d.data : []);
+    const target = document.getElementById("plcCashMachines");
+    if(!rows.length){
+      target.innerHTML = '<div class="muted">ยังไม่มีข้อมูลยอดเงินจาก PLC</div>';
+    }else{
+      target.innerHTML = rows.map(row => `
+        <div class="cash-machine">
+          <h3>เครื่อง ${esc(row.machine_id ?? "—")}</h3>
+          <div class="cash-values">
+            <div class="cash-value"><div class="label">ยอดเงินรวม · D100</div><div class="value">${money(row.d100)} <span class="unit">บาท</span></div></div>
+            <div class="cash-value"><div class="label">เงินเหรียญ · D101</div><div class="value">${money(row.d101)} <span class="unit">บาท</span></div></div>
+            <div class="cash-value"><div class="label">เงินธนบัตร · D102</div><div class="value">${money(row.d102)} <span class="unit">บาท</span></div></div>
+            <div class="cash-value"><div class="label">เงินสแกน QR · D103</div><div class="value">${money(row.d103)} <span class="unit">บาท</span></div></div>
+          </div>
+          <div class="cash-updated">อัปเดตล่าสุด: ${time(row.updated_at)}</div>
+        </div>
+      `).join("");
+    }
+    msg.innerHTML = '<span class="ok">โหลดข้อมูลยอดเงิน PLC สำเร็จ</span>';
+  }catch(e){
+    msg.innerHTML = `<span class="err">${esc(e.message)} — ตรวจสอบว่า Server มี API /api/admin/plc-cash-totals แล้ว</span>`;
+  }finally{
+    plcCashBusy = false;
+  }
+}
+
+/* =========================================================
    SALES REPORT — รายวัน / รายเดือน / รายปี
 ========================================================= */
 function updateReportInputs(){
@@ -909,6 +964,11 @@ loadDeviceStatus();
 setInterval(
   loadDeviceStatus,
   1000
+);
+
+setInterval(
+  loadPlcCashTotals,
+  5000
 );
 
 </script>
