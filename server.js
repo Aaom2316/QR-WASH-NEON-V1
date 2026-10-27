@@ -217,6 +217,11 @@ app.post("/api/qr/session", async (req, res) => {
       });
     }
 
+    // เพิ่มเศษสตางค์ตาม device.id เพื่อให้แต่ละเครื่องมี QR amount ไม่ซ้ำกัน
+    // ตัวอย่าง device.id 1-4: 10.01, 10.02, 10.03, 10.04
+    // amount ที่รับจาก ESP32 ยังคงเป็นราคาพื้นฐาน 10/20/50/100 บาท
+    const qrAmount = Number((amount + (Number(device.id) / 100)).toFixed(2));
+
     await client.query("BEGIN");
 
     // ปิด QR session เก่าของเครื่องนี้ที่ยังค้างอยู่
@@ -254,8 +259,8 @@ app.post("/api/qr/session", async (req, res) => {
        RETURNING *`,
       [
         transactionKey,
-        amount,
-        `QR SESSION WAITING ${amount} BAHT DEVICE ${device.id}`
+        qrAmount,
+        `QR SESSION WAITING ${qrAmount.toFixed(2)} BAHT DEVICE ${device.id}`
       ]
     );
 
@@ -271,7 +276,7 @@ app.post("/api/qr/session", async (req, res) => {
         paymentResult.rows[0].id,
         device.id,
         pulsesFromBaht(amount),
-        `Waiting QR payment ${amount} baht`
+        `Waiting QR payment ${qrAmount.toFixed(2)} baht; base ${amount} baht; device ${device.id}`
       ]
     );
 
@@ -282,7 +287,8 @@ app.post("/api/qr/session", async (req, res) => {
 
       session: {
         transactionKey,
-        amount,
+        amount: qrAmount,
+        baseAmount: amount,
         pulses: pulsesFromBaht(amount),
         deviceId: device.id,
         deviceName: device.name,
@@ -549,21 +555,22 @@ app.post("/api/sms/receive", async (req, res) => {
     console.log("========================================");
     console.log();
 
+    // SMS Bridge รุ่นปัจจุบันไม่ได้ส่ง deviceId มา
+    // ถ้ามี deviceId ที่ถูกต้อง ให้จำกัดค้นหาเฉพาะเครื่องนั้น
+    // ถ้าไม่มี ให้ค้นหา QR session ทุกเครื่อง แล้วรับเฉพาะกรณีพบเพียงรายการเดียว
+    const hasDeviceId = bodyDeviceId !== undefined && bodyDeviceId !== null && bodyDeviceId !== "";
     const smsDeviceId = Number(bodyDeviceId);
 
-    // เครื่อง 2-4 ต้องส่ง deviceId มาจาก SMS Bridge
-    // ถ้าไม่ส่ง จะใช้เครื่อง 1 ตามระบบเดิม
-    const resolvedSmsDeviceId =
-      Number.isInteger(smsDeviceId) && smsDeviceId > 0
-        ? smsDeviceId
-        : (await getDeviceByToken(DEVICE_TOKEN))?.id;
-
-    if (!resolvedSmsDeviceId) {
+    if (hasDeviceId && (!Number.isInteger(smsDeviceId) || smsDeviceId < 1)) {
       return res.status(400).json({
         ok: false,
-        error: "ไม่พบ deviceId สำหรับ SMS Bridge"
+        error: "deviceId ไม่ถูกต้อง"
       });
     }
+
+    const resolvedSmsDeviceId = hasDeviceId ? smsDeviceId : null;
+    console.log("[SMS DEBUG] bodyDeviceId:", hasDeviceId ? smsDeviceId : "NOT_SENT");
+    console.log("[SMS DEBUG] matchingMode:", hasDeviceId ? "DEVICE_SPECIFIC" : "UNIQUE_SESSION_ACROSS_DEVICES");
 
     await client.query("BEGIN");
 
@@ -626,12 +633,11 @@ app.post("/api/sms/receive", async (req, res) => {
          AND p.status = 'WAITING'
          AND c.command_type = 'QR_WAIT'
          AND c.status = 'WAITING'
-         AND c.device_id = $1
+         AND ($1::int IS NULL OR c.device_id = $1)
          AND p.amount = $2
          AND p.created_at >= NOW() -
              INTERVAL '${QR_SESSION_TIMEOUT_SECONDS} seconds'
        ORDER BY p.created_at DESC
-       LIMIT 1
        FOR UPDATE OF p`,
       [
         resolvedSmsDeviceId,
@@ -647,15 +653,10 @@ app.post("/api/sms/receive", async (req, res) => {
 
       await client.query("COMMIT");
 
-      console.log(
-        "IGNORED SMS — NO MATCHING QR SESSION"
-      );
-
+      console.log("IGNORED SMS — NO MATCHING QR SESSION");
       console.log("Amount:", amount);
-      console.log(
-        "Transaction Key:",
-        transactionKey
-      );
+      console.log("Device filter:", resolvedSmsDeviceId ?? "ALL DEVICES");
+      console.log("Transaction Key:", transactionKey);
 
       return res.json({
         ok: true,
@@ -665,8 +666,28 @@ app.post("/api/sms/receive", async (req, res) => {
         ignored: true,
         transactionKey,
         amount,
-        message:
-          "เงินเข้า แต่ไม่มี QR session ของเครื่องที่ตรงยอด จึงไม่ Pulse"
+        deviceId: resolvedSmsDeviceId,
+        message: "ไม่พบ QR session ที่ตรงยอดและยังไม่หมดอายุ จึงไม่ Pulse"
+      });
+    }
+
+    // หาก SMS ไม่มี deviceId และมียอดเดียวกันรออยู่หลายเครื่อง ห้ามเดาเครื่อง
+    if (!resolvedSmsDeviceId && waiting.rows.length > 1) {
+      await client.query("COMMIT");
+      console.log("IGNORED SMS — AMBIGUOUS QR SESSIONS");
+      console.log("Amount:", amount, "Matching sessions:", waiting.rows.length);
+      console.log("Device IDs:", waiting.rows.map(row => row.device_id));
+      return res.json({
+        ok: true,
+        mode: "LIVE",
+        accepted: false,
+        pulsed: false,
+        ignored: true,
+        ambiguous: true,
+        transactionKey,
+        amount,
+        matchingDeviceIds: waiting.rows.map(row => row.device_id),
+        message: "มี QR หลายเครื่องรอยอดเท่ากัน แต่ SMS ไม่มี deviceId จึงไม่ Pulse เพื่อป้องกันสั่งผิดเครื่อง"
       });
     }
 
@@ -801,6 +822,88 @@ app.post("/api/sms/receive", async (req, res) => {
 
     client.release();
 
+  }
+});
+
+
+// ============================================================
+// ESP32 PLC CASH TOTALS — D100-D103 -> Neon plc_cash_totals
+// รับยอดจาก ESP32 โดยใช้ Bearer Token ของอุปกรณ์เดิม
+// ไม่แตะระบบ QR / PULSE
+// ============================================================
+app.post("/api/device/plc-cash-totals", async (req, res) => {
+  const deviceToken = getBearerToken(req);
+  const device = await getDeviceByToken(deviceToken);
+
+  if (!device) {
+    return res.status(401).json({
+      ok: false,
+      error: "Unauthorized"
+    });
+  }
+
+  const values = [req.body?.d100, req.body?.d101, req.body?.d102, req.body?.d103]
+    .map(value => Number(value));
+
+  if (values.some(value => !Number.isSafeInteger(value) || value < 0)) {
+    return res.status(400).json({
+      ok: false,
+      error: "d100, d101, d102, d103 ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป"
+    });
+  }
+
+  const [d100, d101, d102, d103] = values;
+  const deviceId = String(device.id);
+  const machineId = String(device.machine_id ?? device.id);
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // อัปเดตแถวเดิมของอุปกรณ์/เครื่องนี้ก่อน
+    const updated = await client.query(
+      `UPDATE plc_cash_totals
+       SET d100 = $1,
+           d101 = $2,
+           d102 = $3,
+           d103 = $4,
+           updated_at = NOW()
+       WHERE device_id = $5
+          OR (device_id = $5 AND machine_id = $6)
+       RETURNING device_id, machine_id, d100, d101, d102, d103, updated_at`,
+      [d100, d101, d102, d103, deviceId, machineId]
+    );
+
+    let row = updated.rows[0];
+
+    // หากยังไม่มีแถว ให้สร้างแถวของเครื่องนี้
+    if (!row) {
+      const inserted = await client.query(
+        `INSERT INTO plc_cash_totals
+           (device_id, machine_id, d100, d101, d102, d103, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         RETURNING device_id, machine_id, d100, d101, d102, d103, updated_at`,
+        [deviceId, machineId, d100, d101, d102, d103]
+      );
+      row = inserted.rows[0];
+    }
+
+    await client.query("COMMIT");
+
+    return res.json({
+      ok: true,
+      message: "PLC cash totals saved",
+      data: row
+    });
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("PLC cash totals error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+  } finally {
+    client.release();
   }
 });
 
