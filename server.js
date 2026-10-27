@@ -1142,6 +1142,69 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
 });
 
 
+// ============================================================
+// ADMIN PLC CASH TOTALS — 4 MACHINES
+// Read-only endpoint. Does not change payment, QR, SMS or pulse flows.
+// NOTE: This endpoint reads only if a known cash-register table exists.
+// ============================================================
+app.get("/api/admin/cash-totals", requireAdmin, async (req, res) => {
+  try {
+    // The current schema in this Server file does not define where D100-D103
+    // are stored. Return the registered machines/devices without inventing
+    // totals, so the Admin UI can identify missing PLC telemetry clearly.
+    const result = await pool.query(`
+      SELECT
+        d.id AS device_id,
+        d.machine_id,
+        COALESCE(m.name, d.name, 'เครื่อง ' || COALESCE(d.machine_id::text, d.id::text)) AS machine_name,
+        d.online,
+        d.last_seen
+      FROM devices d
+      LEFT JOIN machines m ON m.id = d.machine_id
+      ORDER BY COALESCE(d.machine_id, d.id)
+      LIMIT 4
+    `);
+
+    const byMachine = new Map();
+    for (const row of result.rows) {
+      const key = String(row.machine_id ?? row.device_id);
+      byMachine.set(key, {
+        machine_id: key,
+        machine_name: row.machine_name,
+        device_id: row.device_id,
+        online: onlineFromLastSeen(row.last_seen),
+        last_seen: row.last_seen,
+        // No D100-D103 values are fabricated. These are null until the
+        // ESP32/PLC telemetry storage is identified and connected.
+        D100: null,
+        D101: null,
+        D102: null,
+        D103: null
+      });
+    }
+
+    const machines = [1, 2, 3, 4].map(id =>
+      byMachine.get(String(id)) || {
+        machine_id: String(id),
+        machine_name: `ตู้ล้างที่ ${String(id).padStart(2, "0")}`,
+        device_id: null,
+        online: false,
+        last_seen: null,
+        D100: null,
+        D101: null,
+        D102: null,
+        D103: null
+      }
+    );
+
+    res.json({ ok: true, machines });
+  } catch (e) {
+    console.error("Admin PLC cash totals error:", e);
+    res.status(500).json({ ok: false, error: "โหลดข้อมูลยอด PLC ไม่สำเร็จ" });
+  }
+});
+
+
 app.get("/api/admin/devices", requireAdmin, async (req, res) => {
 
   try {
