@@ -217,6 +217,11 @@ app.post("/api/qr/session", async (req, res) => {
       });
     }
 
+    // เพิ่มเศษสตางค์ตาม device.id เพื่อให้แต่ละเครื่องมี QR amount ไม่ซ้ำกัน
+    // ตัวอย่าง device.id 1-4: 10.01, 10.02, 10.03, 10.04
+    // amount ที่รับจาก ESP32 ยังคงเป็นราคาพื้นฐาน 10/20/50/100 บาท
+    const qrAmount = Number((amount + (Number(device.id) / 100)).toFixed(2));
+
     await client.query("BEGIN");
 
     // ปิด QR session เก่าของเครื่องนี้ที่ยังค้างอยู่
@@ -254,8 +259,8 @@ app.post("/api/qr/session", async (req, res) => {
        RETURNING *`,
       [
         transactionKey,
-        amount,
-        `QR SESSION WAITING ${amount} BAHT DEVICE ${device.id}`
+        qrAmount,
+        `QR SESSION WAITING ${qrAmount.toFixed(2)} BAHT DEVICE ${device.id}`
       ]
     );
 
@@ -271,7 +276,7 @@ app.post("/api/qr/session", async (req, res) => {
         paymentResult.rows[0].id,
         device.id,
         pulsesFromBaht(amount),
-        `Waiting QR payment ${amount} baht`
+        `Waiting QR payment ${qrAmount.toFixed(2)} baht; base ${amount} baht; device ${device.id}`
       ]
     );
 
@@ -282,7 +287,8 @@ app.post("/api/qr/session", async (req, res) => {
 
       session: {
         transactionKey,
-        amount,
+        amount: qrAmount,
+        baseAmount: amount,
         pulses: pulsesFromBaht(amount),
         deviceId: device.id,
         deviceName: device.name,
