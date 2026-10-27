@@ -1283,6 +1283,32 @@ app.get("/api/admin/devices", requireAdmin, async (req, res) => {
 });
 
 
+// ============================================================
+// ADMIN PLC CASH TOTALS — อ่านยอดเงินจากตาราง Neon
+// ใช้ x-admin-key เดียวกับหน้า Admin เดิม
+// ============================================================
+app.get("/api/admin/plc-cash-totals", requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT device_id, machine_id, d100, d101, d102, d103, updated_at
+      FROM plc_cash_totals
+      ORDER BY machine_id::integer NULLS LAST, device_id
+    `);
+
+    return res.json({
+      ok: true,
+      rows: result.rows
+    });
+  } catch (e) {
+    console.error("Admin PLC cash totals error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+  }
+});
+
+
 app.post("/api/admin/command", requireAdmin, async (req, res) => {
 
   const client = await pool.connect();
