@@ -6,6 +6,16 @@
 <title>QR-WASH NEON V1 • Admin</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:#f4f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:20px}.brand h1{margin:0;font-size:28px}.brand p{margin:5px 0 0;color:#6b7280}.login{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.login input{width:190px}.card{background:#fff;border:1px solid #e4e8ef;border-radius:16px;padding:18px;box-shadow:0 4px 16px #1720330b;margin-bottom:18px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.stat{min-height:115px}.label{color:#667085;font-size:14px}.value{font-size:30px;font-weight:700;margin-top:12px}.unit{font-size:14px;color:#667085}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.machine{border:1px solid #e5e7eb;border-radius:14px;padding:16px}.machine-head{display:flex;justify-content:space-between;align-items:center}.machine h3{margin:0}.status{padding:6px 10px;border-radius:999px;font-size:13px;font-weight:bold}.online{background:#dcfce7;color:#166534}.offline{background:#fee2e2;color:#991b1b}.buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:15px}.pulse-btn{border:0;border-radius:12px;padding:14px 8px;background:#172033;color:white;font-weight:bold;cursor:pointer}.pulse-btn:hover{opacity:.88}.device-row{padding:12px 0;border-bottom:1px solid #edf0f4}.device-row:last-child{border-bottom:0}.device-name{font-weight:bold}.muted{color:#667085;font-size:13px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid #edf0f4;font-size:14px}th{color:#667085;background:#fafbfc}.pill{display:inline-block;padding:5px 8px;border-radius:999px;font-size:12px;font-weight:bold}.done{background:#dcfce7;color:#166534}.sent{background:#dbeafe;color:#1d4ed8}.queued{background:#fef3c7;color:#92400e}.failed{background:#fee2e2;color:#991b1b}.received{background:#e0e7ff;color:#3730a3}.manual{background:#f3e8ff;color:#7e22ce}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}.btn{border:1px solid #d0d5dd;background:#fff;border-radius:10px;padding:9px 13px;cursor:pointer}.danger{color:#b42318}.msg{margin-top:10px;min-height:20px;font-size:14px}.ok{color:#15803d}.err{color:#b42318}.small{font-size:12px;color:#667085}@media(max-width:850px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.login{width:100%}.login input{flex:1}}@media(max-width:500px){.wrap{padding:12px}.cards{grid-template-columns:1fr}.buttons{grid-template-columns:repeat(2,1fr)}}
+.cash-machines{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.cash-machine{background:#fff;border:1px solid #e4e8ef;border-radius:14px;padding:15px;min-width:0}
+.cash-machine-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+.cash-machine-head h3{margin:0;font-size:17px}
+.cash-registers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.cash-register{background:#f8fafc;border-radius:10px;padding:10px;min-width:0}
+.cash-register .label{font-size:12px}
+.cash-register .value{font-size:21px;margin-top:7px;overflow-wrap:anywhere}
+@media(max-width:850px){.cash-machines{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:500px){.cash-machines{grid-template-columns:1fr}}
 </style>
 </head>
 
@@ -52,6 +62,16 @@
       <div class="unit">รายการ / Pulse</div>
     </div>
 
+  </div>
+
+  <div class="card" id="plcCashTotals">
+    <div class="toolbar">
+      <h2>💰 ยอดเงินจาก PLC — 4 เครื่อง</h2>
+      <button class="btn" onclick="loadCashTotals()">รีเฟรชยอดเงิน</button>
+    </div>
+    <div class="small" style="margin:6px 0 14px">D100 ยอดรวม • D101 เหรียญ • D102 ธนบัตร • D103 QR</div>
+    <div id="cashTotalsMessage" class="msg">กำลังโหลดข้อมูล...</div>
+    <div id="cashMachines" class="cash-machines"></div>
   </div>
 
   <div class="grid">
@@ -610,6 +630,71 @@ function renderMachines(ms,ds){
     `}).join("");
 }
 
+
+/* =========================================================
+   PLC CASH TOTALS — เพิ่มแสดงผลแยก 4 เครื่อง
+   แสดง — เมื่อ Server ยังไม่มีค่าจริง ไม่แสดงเป็น 0 ปลอม
+========================================================= */
+let cashTotalsBusy = false;
+
+function renderCashTotals(rows){
+  const list = Array.isArray(rows) ? rows : [];
+  const byId = new Map(list.map(m => [String(m.machine_id ?? ""), m]));
+  const machines = [1,2,3,4].map(id => byId.get(String(id)) || {
+    machine_id: String(id),
+    machine_name: `ตู้ล้างที่ ${String(id).padStart(2,"0")}`,
+    online: false,
+    D100: null, D101: null, D102: null, D103: null
+  });
+
+  document.getElementById("cashMachines").innerHTML = machines.map(m => {
+    const online = !!m.online;
+    const register = (value) => value === null || value === undefined || value === ""
+      ? "—"
+      : money(value);
+    return `
+      <div class="cash-machine">
+        <div class="cash-machine-head">
+          <h3>${esc(m.machine_name || `ตู้ล้างที่ ${m.machine_id}`)}</h3>
+          <span class="status ${online ? "online" : "offline"}">${online ? "ONLINE" : "OFFLINE"}</span>
+        </div>
+        <div class="cash-registers">
+          <div class="cash-register"><div class="label">D100 · ยอดรวม</div><div class="value">${register(m.D100)}<span class="unit"> บาท</span></div></div>
+          <div class="cash-register"><div class="label">D101 · เหรียญ</div><div class="value">${register(m.D101)}<span class="unit"> บาท</span></div></div>
+          <div class="cash-register"><div class="label">D102 · ธนบัตร</div><div class="value">${register(m.D102)}<span class="unit"> บาท</span></div></div>
+          <div class="cash-register"><div class="label">D103 · QR</div><div class="value">${register(m.D103)}<span class="unit"> บาท</span></div></div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function loadCashTotals(){
+  if(!adminKey || cashTotalsBusy) return;
+  cashTotalsBusy = true;
+  try{
+    const r = await fetch("/api/admin/cash-totals", {
+      headers: headers(),
+      cache: "no-store"
+    });
+    const raw = await r.text();
+    let d;
+    try { d = JSON.parse(raw); }
+    catch { throw new Error("Server ส่งข้อมูลยอด PLC ไม่ใช่ JSON"); }
+    if(!r.ok || d.ok === false) throw new Error(d.error || "โหลดข้อมูลยอด PLC ไม่สำเร็จ");
+    renderCashTotals(d.machines || d);
+    const hasRegisterData = (d.machines || d).some(m =>
+      ["D100","D101","D102","D103"].some(k => m[k] !== null && m[k] !== undefined && m[k] !== "")
+    );
+    document.getElementById("cashTotalsMessage").innerHTML = hasRegisterData
+      ? '<span class="ok">อัปเดตข้อมูลยอด PLC แล้ว</span>'
+      : '<span class="muted">เชื่อมต่อ API ได้ แต่ Server ยังไม่มีค่าจริงจาก D100–D103 จึงแสดง — ไว้ก่อน</span>';
+  }catch(e){
+    document.getElementById("cashTotalsMessage").innerHTML =
+      `<span class="err">${esc(e.message)}</span>`;
+  }finally{
+    cashTotalsBusy = false;
+  }
+}
 
 /* =========================================================
    DEVICES
