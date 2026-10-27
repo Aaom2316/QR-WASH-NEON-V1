@@ -217,11 +217,6 @@ app.post("/api/qr/session", async (req, res) => {
       });
     }
 
-    // เพิ่มเศษสตางค์ตาม device.id เพื่อให้แต่ละเครื่องมี QR amount ไม่ซ้ำกัน
-    // ตัวอย่าง device.id 1-4: 10.01, 10.02, 10.03, 10.04
-    // amount ที่รับจาก ESP32 ยังคงเป็นราคาพื้นฐาน 10/20/50/100 บาท
-    const qrAmount = Number((amount + (Number(device.id) / 100)).toFixed(2));
-
     await client.query("BEGIN");
 
     // ปิด QR session เก่าของเครื่องนี้ที่ยังค้างอยู่
@@ -259,8 +254,8 @@ app.post("/api/qr/session", async (req, res) => {
        RETURNING *`,
       [
         transactionKey,
-        qrAmount,
-        `QR SESSION WAITING ${qrAmount.toFixed(2)} BAHT DEVICE ${device.id}`
+        amount,
+        `QR SESSION WAITING ${amount} BAHT DEVICE ${device.id}`
       ]
     );
 
@@ -276,7 +271,7 @@ app.post("/api/qr/session", async (req, res) => {
         paymentResult.rows[0].id,
         device.id,
         pulsesFromBaht(amount),
-        `Waiting QR payment ${qrAmount.toFixed(2)} baht; base ${amount} baht; device ${device.id}`
+        `Waiting QR payment ${amount} baht`
       ]
     );
 
@@ -287,8 +282,7 @@ app.post("/api/qr/session", async (req, res) => {
 
       session: {
         transactionKey,
-        amount: qrAmount,
-        baseAmount: amount,
+        amount,
         pulses: pulsesFromBaht(amount),
         deviceId: device.id,
         deviceName: device.name,
@@ -555,22 +549,21 @@ app.post("/api/sms/receive", async (req, res) => {
     console.log("========================================");
     console.log();
 
-    // SMS Bridge รุ่นปัจจุบันไม่ได้ส่ง deviceId มา
-    // ถ้ามี deviceId ที่ถูกต้อง ให้จำกัดค้นหาเฉพาะเครื่องนั้น
-    // ถ้าไม่มี ให้ค้นหา QR session ทุกเครื่อง แล้วรับเฉพาะกรณีพบเพียงรายการเดียว
-    const hasDeviceId = bodyDeviceId !== undefined && bodyDeviceId !== null && bodyDeviceId !== "";
     const smsDeviceId = Number(bodyDeviceId);
 
-    if (hasDeviceId && (!Number.isInteger(smsDeviceId) || smsDeviceId < 1)) {
+    // เครื่อง 2-4 ต้องส่ง deviceId มาจาก SMS Bridge
+    // ถ้าไม่ส่ง จะใช้เครื่อง 1 ตามระบบเดิม
+    const resolvedSmsDeviceId =
+      Number.isInteger(smsDeviceId) && smsDeviceId > 0
+        ? smsDeviceId
+        : (await getDeviceByToken(DEVICE_TOKEN))?.id;
+
+    if (!resolvedSmsDeviceId) {
       return res.status(400).json({
         ok: false,
-        error: "deviceId ไม่ถูกต้อง"
+        error: "ไม่พบ deviceId สำหรับ SMS Bridge"
       });
     }
-
-    const resolvedSmsDeviceId = hasDeviceId ? smsDeviceId : null;
-    console.log("[SMS DEBUG] bodyDeviceId:", hasDeviceId ? smsDeviceId : "NOT_SENT");
-    console.log("[SMS DEBUG] matchingMode:", hasDeviceId ? "DEVICE_SPECIFIC" : "UNIQUE_SESSION_ACROSS_DEVICES");
 
     await client.query("BEGIN");
 
@@ -633,11 +626,12 @@ app.post("/api/sms/receive", async (req, res) => {
          AND p.status = 'WAITING'
          AND c.command_type = 'QR_WAIT'
          AND c.status = 'WAITING'
-         AND ($1::int IS NULL OR c.device_id = $1)
+         AND c.device_id = $1
          AND p.amount = $2
          AND p.created_at >= NOW() -
              INTERVAL '${QR_SESSION_TIMEOUT_SECONDS} seconds'
        ORDER BY p.created_at DESC
+       LIMIT 1
        FOR UPDATE OF p`,
       [
         resolvedSmsDeviceId,
@@ -653,10 +647,15 @@ app.post("/api/sms/receive", async (req, res) => {
 
       await client.query("COMMIT");
 
-      console.log("IGNORED SMS — NO MATCHING QR SESSION");
+      console.log(
+        "IGNORED SMS — NO MATCHING QR SESSION"
+      );
+
       console.log("Amount:", amount);
-      console.log("Device filter:", resolvedSmsDeviceId ?? "ALL DEVICES");
-      console.log("Transaction Key:", transactionKey);
+      console.log(
+        "Transaction Key:",
+        transactionKey
+      );
 
       return res.json({
         ok: true,
@@ -666,28 +665,8 @@ app.post("/api/sms/receive", async (req, res) => {
         ignored: true,
         transactionKey,
         amount,
-        deviceId: resolvedSmsDeviceId,
-        message: "ไม่พบ QR session ที่ตรงยอดและยังไม่หมดอายุ จึงไม่ Pulse"
-      });
-    }
-
-    // หาก SMS ไม่มี deviceId และมียอดเดียวกันรออยู่หลายเครื่อง ห้ามเดาเครื่อง
-    if (!resolvedSmsDeviceId && waiting.rows.length > 1) {
-      await client.query("COMMIT");
-      console.log("IGNORED SMS — AMBIGUOUS QR SESSIONS");
-      console.log("Amount:", amount, "Matching sessions:", waiting.rows.length);
-      console.log("Device IDs:", waiting.rows.map(row => row.device_id));
-      return res.json({
-        ok: true,
-        mode: "LIVE",
-        accepted: false,
-        pulsed: false,
-        ignored: true,
-        ambiguous: true,
-        transactionKey,
-        amount,
-        matchingDeviceIds: waiting.rows.map(row => row.device_id),
-        message: "มี QR หลายเครื่องรอยอดเท่ากัน แต่ SMS ไม่มี deviceId จึงไม่ Pulse เพื่อป้องกันสั่งผิดเครื่อง"
+        message:
+          "เงินเข้า แต่ไม่มี QR session ของเครื่องที่ตรงยอด จึงไม่ Pulse"
       });
     }
 
