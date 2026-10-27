@@ -54,17 +54,6 @@
 
   </div>
 
-  <div class="card" id="cashTotalsPanel">
-    <div class="toolbar"><h2>💰 ยอดเงินจาก PLC (D100–D103)</h2><span class="small" id="cashTotalsUpdated">รอข้อมูลจาก ESP32</span></div>
-    <div class="cards" style="margin-top:14px">
-      <div class="card stat" style="margin:0"><div class="label">D100 • ยอดเงินรวม</div><div id="cashTotalAmount" class="value">0.00</div><div class="unit">บาท</div></div>
-      <div class="card stat" style="margin:0"><div class="label">D101 • ยอดเหรียญ</div><div id="cashCoinAmount" class="value">0.00</div><div class="unit">บาท</div></div>
-      <div class="card stat" style="margin:0"><div class="label">D102 • ยอดธนบัตร</div><div id="cashBanknoteAmount" class="value">0.00</div><div class="unit">บาท</div></div>
-      <div class="card stat" style="margin:0"><div class="label">D103 • ยอดสแกน QR</div><div id="cashQrAmount" class="value">0.00</div><div class="unit">บาท</div></div>
-    </div>
-    <div id="cashTotalsMessage" class="msg"></div>
-  </div>
-
   <div class="grid">
 
     <div class="card">
@@ -413,30 +402,6 @@ async function loadDashboard(){
    แยกจาก Dashboard
    อัปเดตทุก 1 วินาที
 ========================================================= */
-
-/* =========================================================
-   PLC CASH TOTALS — D100-D103
-========================================================= */
-let cashTotalsBusy = false;
-async function loadCashTotals(){
-  if(!adminKey || cashTotalsBusy) return;
-  cashTotalsBusy = true;
-  try{
-    const r = await fetch("/api/admin/cash-totals", {headers:headers(), cache:"no-store"});
-    const d = await r.json();
-    if(!r.ok || !d.ok) throw new Error(d.error || "โหลดข้อมูลยอดเงินไม่สำเร็จ");
-    const t = d.totals || {};
-    document.getElementById("cashTotalAmount").textContent = money(t.totalAmount);
-    document.getElementById("cashCoinAmount").textContent = money(t.coinAmount);
-    document.getElementById("cashBanknoteAmount").textContent = money(t.banknoteAmount);
-    document.getElementById("cashQrAmount").textContent = money(t.qrAmount);
-    const latest = (d.devices || []).filter(x => x.updated_at).sort((a,b) => new Date(b.updated_at)-new Date(a.updated_at))[0];
-    document.getElementById("cashTotalsUpdated").textContent = latest ? `อัปเดตล่าสุด ${time(latest.updated_at)}` : "รอข้อมูลจาก ESP32";
-    document.getElementById("cashTotalsMessage").innerHTML = '<span class="ok">โหลดข้อมูลยอดเงินสำเร็จ</span>';
-  }catch(e){
-    document.getElementById("cashTotalsMessage").innerHTML = `<span class="err">${esc(e.message)}</span>`;
-  }finally{ cashTotalsBusy = false; }
-}
 
 let deviceStatusBusy = false;
 
@@ -925,8 +890,6 @@ async function loadReport(){
 initReportInputs();
 updateReportInputs();
 loadDashboard();
-loadCashTotals();
-setInterval(loadCashTotals, 5000);
 
 /*
   Dashboard หลัก:
