@@ -1143,26 +1143,95 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
 
 
 // ============================================================
-// ADMIN PLC CASH TOTALS — 4 MACHINES
-// Read-only endpoint. Does not change payment, QR, SMS or pulse flows.
-// NOTE: This endpoint reads only if a known cash-register table exists.
+// PLC CASH TOTALS — ESP32 -> Server -> Admin
+// Additive endpoint; does not alter QR, SMS or Pulse routes.
 // ============================================================
+
+async function ensurePlcCashTotalsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS plc_cash_totals (
+      device_id TEXT PRIMARY KEY,
+      machine_id TEXT,
+      d100 BIGINT,
+      d101 BIGINT,
+      d102 BIGINT,
+      d103 BIGINT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+app.post("/api/device/cash-totals", async (req, res) => {
+  try {
+    const auth = String(req.headers.authorization || "");
+    const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+    const device = await getDeviceByToken(token);
+
+    if (!device) {
+      return res.status(401).json({ ok: false, error: "Invalid device token" });
+    }
+
+    const values = ["D100", "D101", "D102", "D103"].map(key => {
+      const value = req.body ? req.body[key] : undefined;
+      if (value === undefined || value === null || !Number.isFinite(Number(value))) {
+        return null;
+      }
+      const n = Number(value);
+      return Number.isInteger(n) && n >= 0 && n <= 4294967295 ? n : null;
+    });
+
+    if (values.some(v => v === null)) {
+      return res.status(400).json({ ok: false, error: "D100-D103 must be non-negative integers" });
+    }
+
+    await ensurePlcCashTotalsTable();
+
+    await pool.query(`
+      INSERT INTO plc_cash_totals
+        (device_id, machine_id, d100, d101, d102, d103, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      ON CONFLICT (device_id) DO UPDATE SET
+        machine_id = EXCLUDED.machine_id,
+        d100 = EXCLUDED.d100,
+        d101 = EXCLUDED.d101,
+        d102 = EXCLUDED.d102,
+        d103 = EXCLUDED.d103,
+        updated_at = NOW()
+    `, [String(device.id), device.machine_id == null ? null : String(device.machine_id), ...values]);
+
+    // Update device heartbeat as well, since this authenticated device is active.
+    await pool.query(
+      "UPDATE devices SET online = TRUE, last_seen = NOW() WHERE id = $1",
+      [device.id]
+    );
+
+    res.json({ ok: true, message: "PLC cash totals saved" });
+  } catch (e) {
+    console.error("Device cash totals error:", e);
+    res.status(500).json({ ok: false, error: "บันทึกยอด PLC ไม่สำเร็จ" });
+  }
+});
+
 app.get("/api/admin/cash-totals", requireAdmin, async (req, res) => {
   try {
-    // The current schema in this Server file does not define where D100-D103
-    // are stored. Return the registered machines/devices without inventing
-    // totals, so the Admin UI can identify missing PLC telemetry clearly.
+    await ensurePlcCashTotalsTable();
+
     const result = await pool.query(`
       SELECT
         d.id AS device_id,
         d.machine_id,
         COALESCE(m.name, d.name, 'เครื่อง ' || COALESCE(d.machine_id::text, d.id::text)) AS machine_name,
         d.online,
-        d.last_seen
+        d.last_seen,
+        c.d100,
+        c.d101,
+        c.d102,
+        c.d103,
+        c.updated_at
       FROM devices d
       LEFT JOIN machines m ON m.id = d.machine_id
-      ORDER BY COALESCE(d.machine_id, d.id)
-      LIMIT 4
+      LEFT JOIN plc_cash_totals c ON c.device_id = d.id::text
+      ORDER BY COALESCE(d.machine_id::text, d.id::text)
     `);
 
     const byMachine = new Map();
@@ -1174,12 +1243,11 @@ app.get("/api/admin/cash-totals", requireAdmin, async (req, res) => {
         device_id: row.device_id,
         online: onlineFromLastSeen(row.last_seen),
         last_seen: row.last_seen,
-        // No D100-D103 values are fabricated. These are null until the
-        // ESP32/PLC telemetry storage is identified and connected.
-        D100: null,
-        D101: null,
-        D102: null,
-        D103: null
+        updated_at: row.updated_at,
+        D100: row.d100 === null ? null : Number(row.d100),
+        D101: row.d101 === null ? null : Number(row.d101),
+        D102: row.d102 === null ? null : Number(row.d102),
+        D103: row.d103 === null ? null : Number(row.d103)
       });
     }
 
@@ -1190,6 +1258,7 @@ app.get("/api/admin/cash-totals", requireAdmin, async (req, res) => {
         device_id: null,
         online: false,
         last_seen: null,
+        updated_at: null,
         D100: null,
         D101: null,
         D102: null,
