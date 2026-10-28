@@ -938,7 +938,7 @@ app.post("/api/device/plc-cash-totals", async (req, res) => {
     }
 
     // บันทึกเฉพาะเมื่อมีค่าเพิ่มขึ้นจริง ไม่สร้างประวัติซ้ำทุก 5 วินาที
-    if (added.some(value => value > 0)) {
+    if (added[1] > 0 || added[2] > 0 || added[3] > 0) {
       await client.query(
         `INSERT INTO plc_cash_history
            (device_id, machine_id, d100, d101, d102, d103,
@@ -1421,7 +1421,7 @@ app.get("/api/admin/plc-cash-history", requireAdmin, async (req, res) => {
        FROM plc_cash_history
        WHERE recorded_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Bangkok')
          AND recorded_at < ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-         AND (added_d100 > 0 OR added_d101 > 0 OR added_d102 > 0 OR added_d103 > 0)
+         AND (added_d101 > 0 OR added_d102 > 0 OR added_d103 > 0)
        ORDER BY recorded_at DESC, id DESC
        LIMIT 1000`,
       [startDate, endDate]
