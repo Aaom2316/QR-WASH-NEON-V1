@@ -33,8 +33,16 @@ async function ensurePlcCashHistoryTable() {
         d101 BIGINT NOT NULL DEFAULT 0,
         d102 BIGINT NOT NULL DEFAULT 0,
         d103 BIGINT NOT NULL DEFAULT 0,
+        added_d100 BIGINT NOT NULL DEFAULT 0,
+        added_d101 BIGINT NOT NULL DEFAULT 0,
+        added_d102 BIGINT NOT NULL DEFAULT 0,
+        added_d103 BIGINT NOT NULL DEFAULT 0,
         recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      ALTER TABLE plc_cash_history ADD COLUMN IF NOT EXISTS added_d100 BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE plc_cash_history ADD COLUMN IF NOT EXISTS added_d101 BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE plc_cash_history ADD COLUMN IF NOT EXISTS added_d102 BIGINT NOT NULL DEFAULT 0;
+      ALTER TABLE plc_cash_history ADD COLUMN IF NOT EXISTS added_d103 BIGINT NOT NULL DEFAULT 0;
       CREATE INDEX IF NOT EXISTS idx_plc_cash_history_recorded_at
         ON plc_cash_history (recorded_at);
       CREATE INDEX IF NOT EXISTS idx_plc_cash_history_machine_time
@@ -886,25 +894,39 @@ app.post("/api/device/plc-cash-totals", async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await ensurePlcCashHistoryTable();
 
-    // อัปเดตแถวเดิมของอุปกรณ์/เครื่องนี้ก่อน
-    const updated = await client.query(
-      `UPDATE plc_cash_totals
-       SET d100 = $1,
-           d101 = $2,
-           d102 = $3,
-           d103 = $4,
-           updated_at = NOW()
-       WHERE device_id = $5
-          OR (device_id = $5 AND machine_id = $6)
-       RETURNING device_id, machine_id, d100, d101, d102, d103, updated_at`,
-      [d100, d101, d102, d103, deviceId, machineId]
+    // อ่านยอดเดิมก่อน เพื่อคำนวณเฉพาะส่วนที่เพิ่มขึ้น
+    const previousResult = await client.query(
+      `SELECT device_id, machine_id, d100, d101, d102, d103
+       FROM plc_cash_totals
+       WHERE device_id = $1
+       LIMIT 1
+       FOR UPDATE`,
+      [deviceId]
+    );
+    const previous = previousResult.rows[0] || null;
+    const oldValues = previous
+      ? [previous.d100, previous.d101, previous.d102, previous.d103].map(Number)
+      : [d100, d101, d102, d103];
+
+    // ถ้าตัวนับ PLC เพิ่ม ให้เก็บเฉพาะส่วนต่าง
+    // ถ้าค่าลดลงเพราะมีการรีเซ็ตตัวนับ จะใช้ค่าปัจจุบันเป็นยอดเริ่มต้นใหม่
+    const added = [d100, d101, d102, d103].map((value, i) =>
+      value >= oldValues[i] ? value - oldValues[i] : value
     );
 
-    let row = updated.rows[0];
-
-    // หากยังไม่มีแถว ให้สร้างแถวของเครื่องนี้
-    if (!row) {
+    let row;
+    if (previous) {
+      const updated = await client.query(
+        `UPDATE plc_cash_totals
+         SET d100 = $1, d101 = $2, d102 = $3, d103 = $4, updated_at = NOW()
+         WHERE device_id = $5
+         RETURNING device_id, machine_id, d100, d101, d102, d103, updated_at`,
+        [d100, d101, d102, d103, deviceId]
+      );
+      row = updated.rows[0];
+    } else {
       const inserted = await client.query(
         `INSERT INTO plc_cash_totals
            (device_id, machine_id, d100, d101, d102, d103, updated_at)
@@ -915,14 +937,17 @@ app.post("/api/device/plc-cash-totals", async (req, res) => {
       row = inserted.rows[0];
     }
 
-    // เก็บ snapshot ลงประวัติ เพื่อค้นย้อนหลังได้ตามวัน/เดือน/ปี
-    await ensurePlcCashHistoryTable();
-    await client.query(
-      `INSERT INTO plc_cash_history
-         (device_id, machine_id, d100, d101, d102, d103, recorded_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-      [deviceId, machineId, d100, d101, d102, d103]
-    );
+    // บันทึกเฉพาะเมื่อมีค่าเพิ่มขึ้นจริง ไม่สร้างประวัติซ้ำทุก 5 วินาที
+    if (added.some(value => value > 0)) {
+      await client.query(
+        `INSERT INTO plc_cash_history
+           (device_id, machine_id, d100, d101, d102, d103,
+            added_d100, added_d101, added_d102, added_d103, recorded_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+        [deviceId, machineId, d100, d101, d102, d103,
+         added[0], added[1], added[2], added[3]]
+      );
+    }
 
     await client.query("COMMIT");
 
@@ -1388,28 +1413,16 @@ app.get("/api/admin/plc-cash-history", requireAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, error: "period ต้องเป็น day, month หรือ year" });
     }
 
-    const bucketExpression = period === "year"
-      ? `to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')`
-      : `to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')`;
-
     const result = await pool.query(
-      `WITH ranked AS (
-         SELECT
-           device_id, machine_id, d100, d101, d102, d103, recorded_at,
-           ${bucketExpression} AS period_label,
-           ROW_NUMBER() OVER (
-             PARTITION BY machine_id, ${period === "day" ? "'day'" : period === "month" ? "to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')" : "to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')"}
-             ORDER BY recorded_at DESC, id DESC
-           ) AS rn
-         FROM plc_cash_history
-         WHERE recorded_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-           AND recorded_at < ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-       )
-       SELECT device_id, machine_id, d100, d101, d102, d103,
-              recorded_at AS updated_at, period_label
-       FROM ranked
-       WHERE rn = 1
-       ORDER BY machine_id::integer NULLS LAST, period_label ASC, device_id`,
+      `SELECT device_id, machine_id, d100, d101, d102, d103,
+              added_d100, added_d101, added_d102, added_d103,
+              recorded_at AS updated_at,
+              to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD HH24:MI:SS') AS period_label
+       FROM plc_cash_history
+       WHERE recorded_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+         AND recorded_at < ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+       ORDER BY recorded_at DESC, id DESC
+       LIMIT 1000`,
       [startDate, endDate]
     );
 
