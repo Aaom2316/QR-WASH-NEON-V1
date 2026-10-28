@@ -20,6 +20,33 @@ const pool = new Pool({
   max: 5
 });
 
+/* สร้างตารางประวัติ PLC เมื่อมีการเรียกใช้งานครั้งแรก */
+let plcCashHistoryTablePromise = null;
+async function ensurePlcCashHistoryTable() {
+  if (!plcCashHistoryTablePromise) {
+    plcCashHistoryTablePromise = pool.query(`
+      CREATE TABLE IF NOT EXISTS plc_cash_history (
+        id BIGSERIAL PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        machine_id TEXT,
+        d100 BIGINT NOT NULL DEFAULT 0,
+        d101 BIGINT NOT NULL DEFAULT 0,
+        d102 BIGINT NOT NULL DEFAULT 0,
+        d103 BIGINT NOT NULL DEFAULT 0,
+        recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_plc_cash_history_recorded_at
+        ON plc_cash_history (recorded_at);
+      CREATE INDEX IF NOT EXISTS idx_plc_cash_history_machine_time
+        ON plc_cash_history (machine_id, recorded_at);
+    `).catch(error => {
+      plcCashHistoryTablePromise = null;
+      throw error;
+    });
+  }
+  return plcCashHistoryTablePromise;
+}
+
 app.use(express.json());
 app.use(express.static("public"));
 
@@ -888,6 +915,15 @@ app.post("/api/device/plc-cash-totals", async (req, res) => {
       row = inserted.rows[0];
     }
 
+    // เก็บ snapshot ลงประวัติ เพื่อค้นย้อนหลังได้ตามวัน/เดือน/ปี
+    await ensurePlcCashHistoryTable();
+    await client.query(
+      `INSERT INTO plc_cash_history
+         (device_id, machine_id, d100, d101, d102, d103, recorded_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [deviceId, machineId, d100, d101, d102, d103]
+    );
+
     await client.query("COMMIT");
 
     return res.json({
@@ -1305,6 +1341,82 @@ app.get("/api/admin/plc-cash-totals", requireAdmin, async (req, res) => {
       ok: false,
       error: e.message
     });
+  }
+});
+
+
+// ============================================================
+// ADMIN PLC CASH HISTORY — ค้นหาประวัติ PLC รายวัน/เดือน/ปี
+// ใช้ snapshot ล่าสุดในแต่ละช่วง ไม่รวมค่าที่ส่งซ้ำทุก 5 วินาที
+// ============================================================
+app.get("/api/admin/plc-cash-history", requireAdmin, async (req, res) => {
+  try {
+    await ensurePlcCashHistoryTable();
+
+    const period = String(req.query.period || "day");
+    let startDate = "";
+    let endDate = "";
+
+    if (period === "day") {
+      const value = String(req.query.date || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return res.status(400).json({ ok: false, error: "กรุณาเลือกวันที่ให้ถูกต้อง (YYYY-MM-DD)" });
+      }
+      const d = new Date(value + "T00:00:00Z");
+      if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) {
+        return res.status(400).json({ ok: false, error: "วันที่ไม่ถูกต้อง" });
+      }
+      startDate = value;
+      d.setUTCDate(d.getUTCDate() + 1);
+      endDate = d.toISOString().slice(0, 10);
+    } else if (period === "month") {
+      const value = String(req.query.month || "");
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) {
+        return res.status(400).json({ ok: false, error: "กรุณาเลือกเดือนให้ถูกต้อง (YYYY-MM)" });
+      }
+      const [year, month] = value.split("-").map(Number);
+      startDate = `${value}-01`;
+      endDate = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    } else if (period === "year") {
+      const value = String(req.query.year || "");
+      if (!/^\d{4}$/.test(value) || Number(value) < 2000 || Number(value) > 2100) {
+        return res.status(400).json({ ok: false, error: "กรุณาเลือกปี ค.ศ. ให้ถูกต้อง" });
+      }
+      startDate = `${value}-01-01`;
+      endDate = `${Number(value) + 1}-01-01`;
+    } else {
+      return res.status(400).json({ ok: false, error: "period ต้องเป็น day, month หรือ year" });
+    }
+
+    const bucketExpression = period === "year"
+      ? `to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')`
+      : `to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')`;
+
+    const result = await pool.query(
+      `WITH ranked AS (
+         SELECT
+           device_id, machine_id, d100, d101, d102, d103, recorded_at,
+           ${bucketExpression} AS period_label,
+           ROW_NUMBER() OVER (
+             PARTITION BY machine_id, ${period === "day" ? "'day'" : period === "month" ? "to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')" : "to_char(recorded_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')"}
+             ORDER BY recorded_at DESC, id DESC
+           ) AS rn
+         FROM plc_cash_history
+         WHERE recorded_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+           AND recorded_at < ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+       )
+       SELECT device_id, machine_id, d100, d101, d102, d103,
+              recorded_at AS updated_at, period_label
+       FROM ranked
+       WHERE rn = 1
+       ORDER BY machine_id::integer NULLS LAST, period_label ASC, device_id`,
+      [startDate, endDate]
+    );
+
+    return res.json({ ok: true, period, startDate, endDate, rows: result.rows });
+  } catch (e) {
+    console.error("Admin PLC cash history error:", e);
+    return res.status(500).json({ ok: false, error: e.message });
   }
 });
 
