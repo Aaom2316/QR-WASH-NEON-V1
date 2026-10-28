@@ -90,11 +90,11 @@
         </div>
         <button class="btn" onclick="loadPlcCashHistory()">ค้นหาประวัติ</button>
       </div>
-      <div class="small" style="margin-bottom:8px">แสดงค่าล่าสุดที่บันทึกในแต่ละวัน (รายวัน), แต่ละวันของเดือน (รายเดือน) หรือแต่ละเดือนของปี (รายปี) เพื่อไม่บวกยอดซ้ำจากการส่งข้อมูลทุก 5 วินาที</div>
+      <div class="small" style="margin-bottom:8px">แสดงรายการที่ยอด D100–D103 เพิ่มขึ้นจริง พร้อมจำนวนเงินที่เพิ่มในแต่ละครั้ง ไม่บันทึกซ้ำทุก 5 วินาที</div>
       <div id="plcHistoryMessage" class="msg">เลือกช่วงเวลาแล้วกดค้นหาประวัติ</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ช่วงเวลา</th><th>เครื่อง</th><th>D100 รวม</th><th>D101 เหรียญ</th><th>D102 ธนบัตร</th><th>D103 QR</th><th>อัปเดตล่าสุด</th></tr></thead>
+          <thead><tr><th>เวลาเงินเข้า</th><th>เครื่อง</th><th>เงินเข้า D100</th><th>เงินเข้าเหรียญ D101</th><th>เงินเข้าธนบัตร D102</th><th>เงินเข้า QR D103</th><th>ยอดล่าสุด D101/D102/D103</th></tr></thead>
           <tbody id="plcHistoryRows"><tr><td colspan="7">เลือกช่วงเวลาแล้วกดค้นหาประวัติ</td></tr></tbody>
         </table>
       </div>
@@ -935,13 +935,13 @@ async function loadPlcCashHistory(){
     }else{
       body.innerHTML = rows.map(row => `
         <tr>
-          <td>${esc(row.period_label || "—")}</td>
-          <td>เครื่อง ${esc(row.machine_id ?? "—")}</td>
-          <td>${money(row.d100)} บาท</td>
-          <td>${money(row.d101)} บาท</td>
-          <td>${money(row.d102)} บาท</td>
-          <td>${money(row.d103)} บาท</td>
           <td>${time(row.updated_at)}</td>
+          <td>เครื่อง ${esc(row.machine_id ?? "—")}</td>
+          <td>${money(row.added_d100)} บาท</td>
+          <td>${money(row.added_d101)} บาท</td>
+          <td>${money(row.added_d102)} บาท</td>
+          <td>${money(row.added_d103)} บาท</td>
+          <td>${money(row.d101)} / ${money(row.d102)} / ${money(row.d103)} บาท</td>
         </tr>
       `).join("");
     }
