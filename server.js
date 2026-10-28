@@ -1421,6 +1421,7 @@ app.get("/api/admin/plc-cash-history", requireAdmin, async (req, res) => {
        FROM plc_cash_history
        WHERE recorded_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Bangkok')
          AND recorded_at < ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+         AND (added_d100 > 0 OR added_d101 > 0 OR added_d102 > 0 OR added_d103 > 0)
        ORDER BY recorded_at DESC, id DESC
        LIMIT 1000`,
       [startDate, endDate]
