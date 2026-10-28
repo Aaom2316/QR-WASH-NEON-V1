@@ -47,6 +47,16 @@ async function ensurePlcCashHistoryTable() {
         ON plc_cash_history (recorded_at);
       CREATE INDEX IF NOT EXISTS idx_plc_cash_history_machine_time
         ON plc_cash_history (machine_id, recorded_at);
+
+      CREATE TABLE IF NOT EXISTS plc_cash_counter_state (
+        device_id TEXT PRIMARY KEY,
+        machine_id TEXT,
+        d100 BIGINT NOT NULL DEFAULT 0,
+        d101 BIGINT NOT NULL DEFAULT 0,
+        d102 BIGINT NOT NULL DEFAULT 0,
+        d103 BIGINT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `).catch(error => {
       plcCashHistoryTablePromise = null;
       throw error;
@@ -896,37 +906,16 @@ app.post("/api/device/plc-cash-totals", async (req, res) => {
     await client.query("BEGIN");
     await ensurePlcCashHistoryTable();
 
-    // อ่านยอดเดิมก่อน เพื่อคำนวณเฉพาะส่วนที่เพิ่มขึ้น
-    const previousResult = await client.query(
-      `SELECT device_id, machine_id, d100, d101, d102, d103
-       FROM plc_cash_totals
+    // Update current totals for the dashboard, independently from history baselines.
+    const totalsResult = await client.query(
+      `UPDATE plc_cash_totals
+       SET machine_id = $2, d100 = $3, d101 = $4, d102 = $5, d103 = $6, updated_at = NOW()
        WHERE device_id = $1
-       LIMIT 1
-       FOR UPDATE`,
-      [deviceId]
+       RETURNING device_id, machine_id, d100, d101, d102, d103, updated_at`,
+      [deviceId, machineId, d100, d101, d102, d103]
     );
-    const previous = previousResult.rows[0] || null;
-    const oldValues = previous
-      ? [previous.d100, previous.d101, previous.d102, previous.d103].map(Number)
-      : [d100, d101, d102, d103];
-
-    // ถ้าตัวนับ PLC เพิ่ม ให้เก็บเฉพาะส่วนต่าง
-    // ถ้าค่าลดลงเพราะมีการรีเซ็ตตัวนับ จะใช้ค่าปัจจุบันเป็นยอดเริ่มต้นใหม่
-    const added = [d100, d101, d102, d103].map((value, i) =>
-      value >= oldValues[i] ? value - oldValues[i] : value
-    );
-
-    let row;
-    if (previous) {
-      const updated = await client.query(
-        `UPDATE plc_cash_totals
-         SET d100 = $1, d101 = $2, d102 = $3, d103 = $4, updated_at = NOW()
-         WHERE device_id = $5
-         RETURNING device_id, machine_id, d100, d101, d102, d103, updated_at`,
-        [d100, d101, d102, d103, deviceId]
-      );
-      row = updated.rows[0];
-    } else {
+    let row = totalsResult.rows[0];
+    if (!row) {
       const inserted = await client.query(
         `INSERT INTO plc_cash_totals
            (device_id, machine_id, d100, d101, d102, d103, updated_at)
@@ -937,15 +926,64 @@ app.post("/api/device/plc-cash-totals", async (req, res) => {
       row = inserted.rows[0];
     }
 
-    // บันทึกเฉพาะเมื่อมีค่าเพิ่มขึ้นจริง ไม่สร้างประวัติซ้ำทุก 5 วินาที
-    if (added[1] > 0 || added[2] > 0 || added[3] > 0) {
+    // Persistent history baseline. First reading only establishes baseline.
+    const stateResult = await client.query(
+      `SELECT device_id, d100, d101, d102, d103
+       FROM plc_cash_counter_state
+       WHERE device_id = $1
+       FOR UPDATE`,
+      [deviceId]
+    );
+    const state = stateResult.rows[0] || null;
+    const current = [d100, d101, d102, d103];
+    let baseline = state
+      ? [state.d100, state.d101, state.d102, state.d103].map(Number)
+      : [...current];
+    const added = [0, 0, 0, 0];
+    let shouldRecord = false;
+
+    if (!state) {
+      await client.query(
+        `INSERT INTO plc_cash_counter_state
+           (device_id, machine_id, d100, d101, d102, d103, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [deviceId, machineId, ...current]
+      );
+    } else {
+      // Only recognize a full reset when all four PLC registers are zero together.
+      // A temporary zero/drop in one register must not reset the history baseline.
+      if (current.every(value => value === 0) && baseline.some(value => value > 0)) {
+        baseline = [...current];
+      } else {
+        // If an individual channel falls while D100 does not, treat it as a
+        // temporary bad reading. Keep that channel's previous baseline.
+        for (let i = 1; i <= 3; i++) {
+          if (current[i] >= baseline[i]) {
+            added[i] = current[i] - baseline[i];
+            baseline[i] = current[i];
+          }
+        }
+        baseline[0] = d100;
+        shouldRecord = added[1] > 0 || added[2] > 0 || added[3] > 0;
+      }
+
+      await client.query(
+        `UPDATE plc_cash_counter_state
+         SET machine_id = $2, d100 = $3, d101 = $4, d102 = $5, d103 = $6, updated_at = NOW()
+         WHERE device_id = $1`,
+        [deviceId, machineId, ...baseline]
+      );
+    }
+
+    // History contains only actual increases in D101-D103; D100 is not income.
+    if (shouldRecord) {
       await client.query(
         `INSERT INTO plc_cash_history
            (device_id, machine_id, d100, d101, d102, d103,
             added_d100, added_d101, added_d102, added_d103, recorded_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+         VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, NOW())`,
         [deviceId, machineId, d100, d101, d102, d103,
-         added[0], added[1], added[2], added[3]]
+         added[1], added[2], added[3]]
       );
     }
 
