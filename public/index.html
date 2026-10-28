@@ -64,6 +64,41 @@
     <div id="plcCashMachines" class="cards" style="grid-template-columns:1fr;gap:12px">
       <div class="muted">กำลังโหลดข้อมูลยอดเงิน PLC...</div>
     </div>
+
+    <div style="border-top:1px solid #edf0f4;margin-top:20px;padding-top:16px">
+      <h3 style="margin:0 0 12px">🗓️ ประวัติยอดเงิน PLC</h3>
+      <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:14px">
+        <div style="min-width:150px">
+          <label class="label" for="plcHistoryPeriod">ช่วงเวลาที่ต้องการดู</label>
+          <select id="plcHistoryPeriod" class="btn" style="display:block;width:100%;margin-top:5px" onchange="updatePlcHistoryInputs()">
+            <option value="day">รายวัน</option>
+            <option value="month">รายเดือน</option>
+            <option value="year">รายปี</option>
+          </select>
+        </div>
+        <div id="plcHistoryDateWrap" style="min-width:170px">
+          <label class="label" for="plcHistoryDate">เลือกวันที่</label>
+          <input id="plcHistoryDate" class="btn" type="date" style="display:block;width:100%;margin-top:5px">
+        </div>
+        <div id="plcHistoryMonthWrap" style="min-width:170px;display:none">
+          <label class="label" for="plcHistoryMonth">เลือกเดือน</label>
+          <input id="plcHistoryMonth" class="btn" type="month" style="display:block;width:100%;margin-top:5px">
+        </div>
+        <div id="plcHistoryYearWrap" style="min-width:130px;display:none">
+          <label class="label" for="plcHistoryYear">เลือกปี (ค.ศ.)</label>
+          <input id="plcHistoryYear" class="btn" type="number" min="2000" max="2100" class="btn" style="display:block;width:100%;margin-top:5px">
+        </div>
+        <button class="btn" onclick="loadPlcCashHistory()">ค้นหาประวัติ</button>
+      </div>
+      <div class="small" style="margin-bottom:8px">แสดงค่าล่าสุดที่บันทึกในแต่ละวัน (รายวัน), แต่ละวันของเดือน (รายเดือน) หรือแต่ละเดือนของปี (รายปี) เพื่อไม่บวกยอดซ้ำจากการส่งข้อมูลทุก 5 วินาที</div>
+      <div id="plcHistoryMessage" class="msg">เลือกช่วงเวลาแล้วกดค้นหาประวัติ</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ช่วงเวลา</th><th>เครื่อง</th><th>D100 รวม</th><th>D101 เหรียญ</th><th>D102 ธนบัตร</th><th>D103 QR</th><th>อัปเดตล่าสุด</th></tr></thead>
+          <tbody id="plcHistoryRows"><tr><td colspan="7">เลือกช่วงเวลาแล้วกดค้นหาประวัติ</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <div class="grid">
@@ -856,6 +891,67 @@ async function loadPlcCashTotals(){
 }
 
 /* =========================================================
+   PLC CASH HISTORY — ประวัติยอดเงินตามวัน/เดือน/ปี
+========================================================= */
+function updatePlcHistoryInputs(){
+  const period = document.getElementById("plcHistoryPeriod").value;
+  document.getElementById("plcHistoryDateWrap").style.display = period === "day" ? "block" : "none";
+  document.getElementById("plcHistoryMonthWrap").style.display = period === "month" ? "block" : "none";
+  document.getElementById("plcHistoryYearWrap").style.display = period === "year" ? "block" : "none";
+}
+
+function initPlcHistoryInputs(){
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  const dateValue = localDate.toISOString().slice(0,10);
+  document.getElementById("plcHistoryDate").value = dateValue;
+  document.getElementById("plcHistoryMonth").value = dateValue.slice(0,7);
+  document.getElementById("plcHistoryYear").value = dateValue.slice(0,4);
+}
+
+async function loadPlcCashHistory(){
+  if(!adminKey){
+    document.getElementById("plcHistoryMessage").innerHTML = '<span class="err">กรุณาใส่ Admin Key ก่อน</span>';
+    return;
+  }
+  const period = document.getElementById("plcHistoryPeriod").value;
+  const params = new URLSearchParams({period});
+  if(period === "day") params.set("date", document.getElementById("plcHistoryDate").value);
+  if(period === "month") params.set("month", document.getElementById("plcHistoryMonth").value);
+  if(period === "year") params.set("year", document.getElementById("plcHistoryYear").value);
+  const message = document.getElementById("plcHistoryMessage");
+  const body = document.getElementById("plcHistoryRows");
+  message.textContent = "กำลังค้นหาประวัติยอดเงิน PLC...";
+  try{
+    const r = await fetch(`/api/admin/plc-cash-history?${params.toString()}`, {
+      headers: headers(),
+      cache: "no-store"
+    });
+    const d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.error || "ค้นหาประวัติยอดเงิน PLC ไม่สำเร็จ");
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    if(!rows.length){
+      body.innerHTML = '<tr><td colspan="7">ไม่มีข้อมูลในช่วงเวลาที่เลือก</td></tr>';
+    }else{
+      body.innerHTML = rows.map(row => `
+        <tr>
+          <td>${esc(row.period_label || "—")}</td>
+          <td>เครื่อง ${esc(row.machine_id ?? "—")}</td>
+          <td>${money(row.d100)} บาท</td>
+          <td>${money(row.d101)} บาท</td>
+          <td>${money(row.d102)} บาท</td>
+          <td>${money(row.d103)} บาท</td>
+          <td>${time(row.updated_at)}</td>
+        </tr>
+      `).join("");
+    }
+    message.innerHTML = `<span class="ok">ค้นหาประวัติสำเร็จ · ${rows.length} รายการ</span>`;
+  }catch(e){
+    message.innerHTML = `<span class="err">${esc(e.message)} — ตรวจสอบว่า Server มี API /api/admin/plc-cash-history แล้ว</span>`;
+  }
+}
+
+/* =========================================================
    SALES REPORT — รายวัน / รายเดือน / รายปี
 ========================================================= */
 function updateReportInputs(){
@@ -944,6 +1040,8 @@ async function loadReport(){
 /* โหลด Dashboard หลัก */
 initReportInputs();
 updateReportInputs();
+initPlcHistoryInputs();
+updatePlcHistoryInputs();
 loadDashboard();
 
 /*
