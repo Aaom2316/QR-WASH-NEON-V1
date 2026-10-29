@@ -61,6 +61,12 @@
     </div>
     <div class="small" style="margin:8px 0 14px">ดึงข้อมูลจากตาราง plc_cash_totals • รีเฟรชอัตโนมัติทุก 3 วินาที</div>
     <div id="plcCashMessage" class="msg">กำลังโหลดข้อมูล...</div>
+    <div class="cards" style="margin:12px 0 18px">
+      <div class="card stat" style="margin:0"><div class="label">รวมเงินเหรียญ · D101</div><div id="plcSumD101" class="value">—</div><div class="unit">บาท · ทุกเครื่อง</div></div>
+      <div class="card stat" style="margin:0"><div class="label">รวมเงินธนบัตร · D102</div><div id="plcSumD102" class="value">—</div><div class="unit">บาท · ทุกเครื่อง</div></div>
+      <div class="card stat" style="margin:0"><div class="label">รวมเงิน QR · D103</div><div id="plcSumD103" class="value">—</div><div class="unit">บาท · ทุกเครื่อง</div></div>
+      <div class="card stat" style="margin:0"><div class="label">รวมเงินทั้งหมด · D101+D102+D103</div><div id="plcSumAll" class="value">—</div><div class="unit">บาท · ทุกช่องทางทุกเครื่อง</div></div>
+    </div>
     <div id="plcCashMachines" class="cards" style="grid-template-columns:1fr;gap:12px">
       <div class="muted">กำลังโหลดข้อมูลยอดเงิน PLC...</div>
     </div>
@@ -868,7 +874,16 @@ async function loadPlcCashTotals(){
     const target = document.getElementById("plcCashMachines");
     if(!rows.length){
       target.innerHTML = '<div class="muted">ยังไม่มีข้อมูลยอดเงินจาก PLC</div>';
+      ["plcSumD101","plcSumD102","plcSumD103","plcSumAll"].forEach(id => document.getElementById(id).textContent = "—");
     }else{
+      const sumRegister = key => rows.reduce((sum, row) => sum + (Number(row[key]) || 0), 0);
+      const totalD101 = sumRegister("d101");
+      const totalD102 = sumRegister("d102");
+      const totalD103 = sumRegister("d103");
+      document.getElementById("plcSumD101").textContent = money(totalD101);
+      document.getElementById("plcSumD102").textContent = money(totalD102);
+      document.getElementById("plcSumD103").textContent = money(totalD103);
+      document.getElementById("plcSumAll").textContent = money(totalD101 + totalD102 + totalD103);
       target.innerHTML = rows.map(row => `
         <div class="cash-machine">
           <h3>เครื่อง ${esc(row.machine_id ?? "—")}</h3>
