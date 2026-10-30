@@ -1198,6 +1198,9 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
 
   try {
 
+    // Ensure PLC income history exists before calculating today's revenue.
+    await ensurePlcCashHistoryTable();
+
     const [
       health,
       stats,
@@ -1214,13 +1217,18 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
         SELECT
           COALESCE(
             (
-              SELECT SUM(p.amount)
-              FROM payments p
-              JOIN commands c
-                ON c.payment_id = p.id
-              WHERE p.created_at >= CURRENT_DATE
-                AND p.source = 'kbank_sms'
-                AND c.command_type = 'PULSE'
+              SELECT SUM(
+                h.added_d101 + h.added_d102 + h.added_d103
+              )
+              FROM plc_cash_history h
+              WHERE h.recorded_at >= (
+                (NOW() AT TIME ZONE 'Asia/Bangkok')::date::timestamp
+                AT TIME ZONE 'Asia/Bangkok'
+              )
+                AND h.recorded_at < (
+                  ((NOW() AT TIME ZONE 'Asia/Bangkok')::date + 1)::timestamp
+                  AT TIME ZONE 'Asia/Bangkok'
+                )
             ),
             0
           ) AS today_revenue,
@@ -1230,7 +1238,14 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
             FROM payments p
             JOIN commands c
               ON c.payment_id = p.id
-            WHERE p.created_at >= CURRENT_DATE
+            WHERE p.created_at >= (
+                (NOW() AT TIME ZONE 'Asia/Bangkok')::date::timestamp
+                AT TIME ZONE 'Asia/Bangkok'
+              )
+              AND p.created_at < (
+                ((NOW() AT TIME ZONE 'Asia/Bangkok')::date + 1)::timestamp
+                AT TIME ZONE 'Asia/Bangkok'
+              )
               AND p.source = 'kbank_sms'
               AND c.command_type = 'PULSE'
           ) AS today_transactions,
@@ -1241,7 +1256,14 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
               FROM commands c
               JOIN payments p
                 ON p.id = c.payment_id
-              WHERE p.created_at >= CURRENT_DATE
+              WHERE p.created_at >= (
+                (NOW() AT TIME ZONE 'Asia/Bangkok')::date::timestamp
+                AT TIME ZONE 'Asia/Bangkok'
+              )
+                AND p.created_at < (
+                  ((NOW() AT TIME ZONE 'Asia/Bangkok')::date + 1)::timestamp
+                  AT TIME ZONE 'Asia/Bangkok'
+                )
                 AND p.source = 'kbank_sms'
                 AND c.command_type = 'PULSE'
             ),
