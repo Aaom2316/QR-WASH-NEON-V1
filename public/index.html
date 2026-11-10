@@ -184,6 +184,15 @@ input{color:#edf3ff;background:#101f40;border:1px solid #35528b;border-radius:10
           <input id="plcHistoryYear" class="btn" type="number" min="2000" max="2100" class="btn" style="display:block;width:100%;margin-top:5px">
         </div>
         <button class="btn" onclick="loadPlcCashHistory()">ค้นหาประวัติ</button>
+        <div id="plcHistoryTotalCard" style="margin-left:auto;min-width:280px;max-width:360px;flex:1;background:linear-gradient(120deg,#103d4a,#142c59 65%,#29145d);border:1px solid #16cbb5;border-radius:14px;padding:12px 16px;box-shadow:0 6px 20px #02091e66">
+          <div style="font-size:13px;color:#8ff5e1">ยอดรวมตามช่วงเวลาที่เลือก</div>
+          <div id="plcHistoryTotal" style="font-size:30px;font-weight:800;color:#fff;margin:3px 0">฿0.00</div>
+          <div style="font-size:11px;color:#b8c9e8;display:flex;gap:12px;flex-wrap:wrap">
+            <span>เหรียญ <b id="plcHistorySumD101">0.00</b></span>
+            <span>ธนบัตร <b id="plcHistorySumD102">0.00</b></span>
+            <span>QR <b id="plcHistorySumD103">0.00</b></span>
+          </div>
+        </div>
       </div>
       <div class="small" style="margin-bottom:8px">แสดงเฉพาะรายการที่ยอด D100–D103 เพิ่มขึ้นจริง พร้อมจำนวนเงินที่เพิ่มในแต่ละครั้ง รายการเก่าที่ไม่มีเงินเข้าและเป็น 0 จะไม่แสดง</div>
       <div id="plcHistoryMessage" class="msg">เลือกช่วงเวลาแล้วกดค้นหาประวัติ</div>
@@ -1036,6 +1045,22 @@ async function loadPlcCashHistory(){
     const d = await r.json();
     if(!r.ok || !d.ok) throw new Error(d.error || "ค้นหาประวัติยอดเงิน PLC ไม่สำเร็จ");
     const rows = Array.isArray(d.rows) ? d.rows : [];
+
+    // รวมยอดจากรายการประวัติที่ API ส่งกลับมา ตามช่วงเวลาที่ผู้ใช้เลือก
+    const sumField = (field) => rows.reduce((sum, row) => {
+      const value = Number(row[field] ?? 0);
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+    const sumD101 = sumField("added_d101");
+    const sumD102 = sumField("added_d102");
+    const sumD103 = sumField("added_d103");
+    const sumAll = sumD101 + sumD102 + sumD103;
+
+    document.getElementById("plcHistoryTotal").textContent = "฿" + money(sumAll);
+    document.getElementById("plcHistorySumD101").textContent = money(sumD101);
+    document.getElementById("plcHistorySumD102").textContent = money(sumD102);
+    document.getElementById("plcHistorySumD103").textContent = money(sumD103);
+
     if(!rows.length){
       body.innerHTML = '<tr><td colspan="5">ไม่มีข้อมูลในช่วงเวลาที่เลือก</td></tr>';
     }else{
@@ -1049,8 +1074,12 @@ async function loadPlcCashHistory(){
         </tr>
       `).join("");
     }
-    message.innerHTML = `<span class="ok">ค้นหาประวัติสำเร็จ · ${rows.length} รายการ</span>`;
+    message.innerHTML = `<span class="ok">ค้นหาประวัติสำเร็จ · ${rows.length} รายการ · รวม ${money(sumAll)} บาท</span>`;
   }catch(e){
+    document.getElementById("plcHistoryTotal").textContent = "—";
+    ["plcHistorySumD101","plcHistorySumD102","plcHistorySumD103"].forEach(id => {
+      document.getElementById(id).textContent = "—";
+    });
     message.innerHTML = `<span class="err">${esc(e.message)} — ตรวจสอบว่า Server มี API /api/admin/plc-cash-history แล้ว</span>`;
   }
 }
