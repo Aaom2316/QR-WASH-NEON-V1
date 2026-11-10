@@ -5,14 +5,104 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QR-WASH NEON V1 • Admin</title>
 <style>
-*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:#f4f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:20px}.brand h1{margin:0;font-size:28px}.brand p{margin:5px 0 0;color:#6b7280}.login{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.login input{width:190px}.card{background:#fff;border:1px solid #e4e8ef;border-radius:16px;padding:18px;box-shadow:0 4px 16px #1720330b;margin-bottom:18px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.stat{min-height:115px}.label{color:#667085;font-size:14px}.value{font-size:30px;font-weight:700;margin-top:12px}.unit{font-size:14px;color:#667085}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}.machine{border:1px solid #e5e7eb;border-radius:14px;padding:16px}.machine-head{display:flex;justify-content:space-between;align-items:center}.machine h3{margin:0}.status{padding:6px 10px;border-radius:999px;font-size:13px;font-weight:bold}.online{background:#dcfce7;color:#166534}.offline{background:#fee2e2;color:#991b1b}.buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:15px}.pulse-btn{border:0;border-radius:12px;padding:14px 8px;background:#172033;color:white;font-weight:bold;cursor:pointer}.pulse-btn:hover{opacity:.88}.device-row{padding:12px 0;border-bottom:1px solid #edf0f4}.device-row:last-child{border-bottom:0}.device-name{font-weight:bold}.muted{color:#667085;font-size:13px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:760px}th,td{text-align:left;padding:11px 10px;border-bottom:1px solid #edf0f4;font-size:14px}th{color:#667085;background:#fafbfc}.pill{display:inline-block;padding:5px 8px;border-radius:999px;font-size:12px;font-weight:bold}.done{background:#dcfce7;color:#166534}.sent{background:#dbeafe;color:#1d4ed8}.queued{background:#fef3c7;color:#92400e}.failed{background:#fee2e2;color:#991b1b}.received{background:#e0e7ff;color:#3730a3}.manual{background:#f3e8ff;color:#7e22ce}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}.btn{border:1px solid #d0d5dd;background:#fff;border-radius:10px;padding:9px 13px;cursor:pointer}.danger{color:#b42318}.msg{margin-top:10px;min-height:20px;font-size:14px}.ok{color:#15803d}.err{color:#b42318}.small{font-size:12px;color:#667085}.cash-machine{border:1px solid #e4e8ef;border-radius:14px;padding:16px;background:#fff}.cash-machine h3{margin:0 0 12px}.cash-values{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.cash-value{background:#f8fafc;border-radius:10px;padding:12px}.cash-value .label{font-size:12px}.cash-value .value{font-size:22px;margin-top:7px}.cash-updated{margin-top:10px;font-size:12px;color:#667085}@media(max-width:850px){.cash-values{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:850px){.cards{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.login{width:100%}.login input{flex:1}}@media(max-width:500px){.wrap{padding:12px}.cards{grid-template-columns:1fr}.buttons{grid-template-columns:repeat(2,1fr)}}
+
+*{box-sizing:border-box}
+:root{--bg:#070f27;--panel:#0b1733;--panel2:#101f43;--line:#263f78;--text:#f3f6ff;--muted:#91a9d8;--cyan:#20d9f4;--blue:#168bff;--purple:#8b35ff;--green:#00d99a;--amber:#ffb52e}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:radial-gradient(ellipse at 85% 5%,#1b1b59 0,#0b1533 38%,var(--bg) 75%);color:var(--text)}
+.app-shell{min-height:100vh}
+.sidebar{position:fixed;inset:0 auto 0 0;width:266px;padding:22px 14px;background:#071128;border-right:1px solid #20376b;z-index:20;display:flex;flex-direction:column}
+.side-brand{display:flex;align-items:center;gap:12px;padding:0 12px 24px;border-bottom:1px solid #20345f}
+.side-logo{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#ffd66b,#e99a21);box-shadow:0 0 22px #ffb52e66;font-size:23px}
+.side-brand strong{display:block;font-size:23px;font-style:italic;color:var(--cyan)}
+.side-brand small{font-size:11px;letter-spacing:1.3px;color:#b9c8eb}
+.side-nav{display:grid;gap:9px;margin-top:30px}
+.side-nav a{color:#c8d7f8;text-decoration:none;padding:15px 14px;border:1px solid transparent;border-radius:14px;font-size:14px;transition:.15s}
+.side-nav a:hover,.side-nav a.active{background:linear-gradient(110deg,#5720c7,#183e9b);border-color:#853bff;color:white}
+.main-area{margin-left:266px;min-width:0}
+.topbar{height:80px;padding:0 28px;display:flex;align-items:center;justify-content:space-between;gap:16px;background:#09142eeF;border-bottom:1px solid #233a70;position:sticky;top:0;z-index:10}
+.topbar-title{font-size:24px;font-weight:700}.topbar-title span{font-weight:400;color:var(--muted)}
+.server-chip{padding:10px 16px;border-radius:30px;background:#06352f;border:1px solid #087b67;color:#42f0c0;font-size:13px;white-space:nowrap}
+.wrap{width:100%;max-width:none;margin:0;padding:28px 30px 40px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:22px;padding:32px 38px;border:1px solid #3b3eaa;border-radius:25px;background:linear-gradient(110deg,#101c50 0%,#11134b 65%,#281064 100%);box-shadow:0 14px 40px #02091e66}
+.brand h1{margin:0;font-size:54px;font-style:italic;letter-spacing:1px;background:linear-gradient(90deg,#19e2f4,#7e9cff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand p{margin:8px 0 0;color:#d5e2ff;font-size:17px}
+.login{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input,select{font:inherit}
+.login input{width:190px}
+.card{background:linear-gradient(145deg,#0d1b39,#09142d);border:1px solid #263f78;border-radius:19px;padding:20px;box-shadow:0 8px 24px #02091e55;margin-bottom:18px}
+.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.stat{min-height:125px}
+.label{color:#a9c1f3;font-size:14px}
+.value{font-size:32px;font-weight:800;margin-top:14px;color:#fff}
+.unit{font-size:14px;color:#91a9d8}
+.cards>.card:nth-child(1){border-color:#00bda4}
+.cards>.card:nth-child(2){border-color:#078bff}
+.cards>.card:nth-child(3){border-color:#8b35ff}
+.cards>.card:nth-child(4){border-color:#d88b13}
+.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+.machine{border:1px solid #2c477e;border-radius:15px;padding:16px;background:#0c1a37;margin:12px 0}
+.machine-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.machine h3{margin:0}
+.status{padding:6px 11px;border-radius:999px;font-size:13px;font-weight:bold;white-space:nowrap}
+.online{background:#064333;color:#40f3bd}.offline{background:#49253e;color:#ff9bc5}
+.buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:15px}
+.pulse-btn{border:1px solid #2877e9;border-radius:12px;padding:14px 8px;background:linear-gradient(110deg,#0757b9,#183e9e);color:white;font-weight:bold;cursor:pointer}
+.pulse-btn:hover{filter:brightness(1.2)}.pulse-btn:disabled{opacity:.35;cursor:not-allowed}
+.device-row{padding:13px 0;border-bottom:1px solid #20365f}.device-row:last-child{border-bottom:0}
+.device-name{font-weight:bold}.muted{color:#9bb2df;font-size:13px}
+.table-wrap{overflow:auto;border:1px solid #20365f;border-radius:12px}
+table{width:100%;border-collapse:collapse;min-width:760px}
+th,td{text-align:left;padding:13px 12px;border-bottom:1px solid #20365f;font-size:14px}
+th{color:#b8d0ff;background:#122347}
+td{color:#e6edff}tr:last-child td{border-bottom:0}
+.pill{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:bold}
+.done{background:#064333;color:#40f3bd}.sent{background:#123d73;color:#8dc5ff}.queued{background:#493817;color:#ffd16a}.failed{background:#49252b;color:#ff9a9a}.received{background:#222e69;color:#b6c4ff}.manual{background:#40205e;color:#d9a5ff}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.btn{border:1px solid #35528b;background:#101f40;color:#eaf1ff;border-radius:11px;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-block}
+.btn:hover{background:#19366a;border-color:#648fe0}
+.danger{color:#ff9b9b}.msg{margin-top:10px;min-height:20px;font-size:14px}
+.ok{color:#36e8b4}.err{color:#ff929e}.small{font-size:12px;color:#91a9d8}
+.cash-machine{border:1px solid #2b477c;border-radius:15px;padding:16px;background:#0c1a37}
+.cash-machine h3{margin:0 0 12px}
+.cash-values{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.cash-value{background:#101f40;border:1px solid #233c6b;border-radius:11px;padding:12px}
+.cash-value .label{font-size:12px}.cash-value .value{font-size:22px;margin-top:7px}
+.cash-updated{margin-top:10px;font-size:12px;color:#91a9d8}
+#plcCashSection>div[style*="border-top"],#salesReport{border-top-color:#263f78!important}
+h2{color:#f1f5ff}h3{color:#eaf1ff}
+select.btn,input.btn{color:#edf3ff;background:#101f40;border-color:#35528b}
+input{color:#edf3ff;background:#101f40;border:1px solid #35528b;border-radius:10px;padding:10px}
+@media(max-width:1100px){.sidebar{width:220px}.main-area{margin-left:220px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.cash-values{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}.brand h1{font-size:44px}}
+@media(max-width:760px){.sidebar{position:relative;width:100%;height:auto;padding:12px}.side-brand{padding-bottom:12px}.side-nav{display:flex;overflow-x:auto;margin-top:12px;gap:6px}.side-nav a{white-space:nowrap;padding:10px 12px}.main-area{margin-left:0}.topbar{height:58px;padding:0 14px}.topbar-title{font-size:18px}.wrap{padding:14px}.top{padding:22px;flex-direction:column;align-items:flex-start}.brand h1{font-size:40px}.login{width:100%}.login input{flex:1;min-width:130px}}
+@media(max-width:500px){.cards{grid-template-columns:1fr}.buttons{grid-template-columns:repeat(2,1fr)}.cash-values{grid-template-columns:1fr 1fr}.card{padding:15px}.value{font-size:28px}}
+
 </style>
 </head>
 
 <body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="side-brand">
+      <div class="side-logo">🏛️</div>
+      <div><strong>QR-WASH</strong><small>NEON ADMIN CONTROL</small></div>
+    </div>
+    <nav class="side-nav">
+      <a class="active" href="#home">⌂ หน้าหลัก</a>
+      <a href="#plcCashSection">▦ ยอดเงิน PLC</a>
+      <a href="#machineControl">⚙ ควบคุมเครื่อง</a>
+      <a href="#salesReport">▤ รายงานยอดขาย</a>
+      <a href="#historySection">▤ ประวัติรายการ</a>
+    </nav>
+  </aside>
+  <main class="main-area">
+    <div class="topbar">
+      <div class="topbar-title">QR-WASH NEON V1 <span>• Admin Dashboard</span></div>
+      <div class="server-chip">● Server Online</div>
+    </div>
 <div class="wrap">
 
-  <div class="top">
+  <div class="top" id="home">
     <div class="brand">
       <h1>🚿 QR-WASH NEON V1</h1>
       <p>Admin Dashboard • Server → Neon → ESP32</p>
@@ -107,7 +197,7 @@
     </div>
   </div>
 
-  <div class="grid">
+  <div class="grid" id="machineControl">
 
     <div class="card">
       <div class="toolbar">
@@ -169,7 +259,7 @@
     <div class="small" style="margin-top:10px">รายงานนี้นับรายการ KBank QR ที่มีคำสั่ง PULSE ในฐานข้อมูล โดยใช้เขตเวลาไทย</div>
   </div>
 
-  <div class="card">
+  <div class="card" id="historySection">
 
     <div class="toolbar">
       <h2>🧾 ประวัติรายการ</h2>
@@ -201,6 +291,8 @@
 
   </div>
 
+</div>
+  </main>
 </div>
 
 <script>
