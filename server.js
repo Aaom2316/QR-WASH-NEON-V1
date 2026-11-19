@@ -1473,6 +1473,23 @@ app.get("/api/admin/plc-cash-history", requireAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, error: "period ต้องเป็น day, month หรือ year" });
     }
 
+    // คำนวณยอดรวมจากประวัติทั้งหมดในช่วงวันที่เลือก (ไม่ติด LIMIT)
+    // แยกจากรายการประวัติที่ส่งให้หน้าเว็บ เพื่อให้ตารางยังโหลดได้เร็ว
+    const summaryResult = await pool.query(
+      `SELECT
+          COALESCE(SUM(added_d101), 0)::bigint AS sum_d101,
+          COALESCE(SUM(added_d102), 0)::bigint AS sum_d102,
+          COALESCE(SUM(added_d103), 0)::bigint AS sum_d103,
+          COALESCE(SUM(added_d101 + added_d102 + added_d103), 0)::bigint AS sum_all,
+          COUNT(*)::bigint AS total_records
+       FROM plc_cash_history
+       WHERE recorded_at >= ($1::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+         AND recorded_at < ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+         AND (added_d101 > 0 OR added_d102 > 0 OR added_d103 > 0)`,
+      [startDate, endDate]
+    );
+
+    // ตารางประวัติยังคงจำกัด 1,000 รายการล่าสุดเหมือนระบบเดิม
     const result = await pool.query(
       `SELECT device_id, machine_id, d100, d101, d102, d103,
               added_d100, added_d101, added_d102, added_d103,
@@ -1487,7 +1504,14 @@ app.get("/api/admin/plc-cash-history", requireAdmin, async (req, res) => {
       [startDate, endDate]
     );
 
-    return res.json({ ok: true, period, startDate, endDate, rows: result.rows });
+    return res.json({
+      ok: true,
+      period,
+      startDate,
+      endDate,
+      summary: summaryResult.rows[0],
+      rows: result.rows
+    });
   } catch (e) {
     console.error("Admin PLC cash history error:", e);
     return res.status(500).json({ ok: false, error: e.message });
