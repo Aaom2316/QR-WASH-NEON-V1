@@ -1046,15 +1046,22 @@ async function loadPlcCashHistory(){
     if(!r.ok || !d.ok) throw new Error(d.error || "ค้นหาประวัติยอดเงิน PLC ไม่สำเร็จ");
     const rows = Array.isArray(d.rows) ? d.rows : [];
 
-    // รวมยอดจากรายการประวัติที่ API ส่งกลับมา ตามช่วงเวลาที่ผู้ใช้เลือก
+    // ใช้ยอดรวมที่ Server คำนวณจากประวัติทั้งหมด ไม่ใช่เฉพาะ 1,000 แถวที่แสดง
+    // มี fallback ไปคำนวณจาก rows เพื่อรองรับ Server รุ่นเก่าระหว่างอัปเดต
+    const summary = d.summary || {};
     const sumField = (field) => rows.reduce((sum, row) => {
       const value = Number(row[field] ?? 0);
       return sum + (Number.isFinite(value) ? value : 0);
     }, 0);
-    const sumD101 = sumField("added_d101");
-    const sumD102 = sumField("added_d102");
-    const sumD103 = sumField("added_d103");
-    const sumAll = sumD101 + sumD102 + sumD103;
+    const readTotal = (key, fallback) => {
+      const value = Number(summary[key]);
+      return summary[key] !== undefined && Number.isFinite(value) ? value : fallback;
+    };
+    const sumD101 = readTotal("sum_d101", sumField("added_d101"));
+    const sumD102 = readTotal("sum_d102", sumField("added_d102"));
+    const sumD103 = readTotal("sum_d103", sumField("added_d103"));
+    const sumAll = readTotal("sum_all", sumD101 + sumD102 + sumD103);
+    const totalRecords = Number(summary.total_records);
 
     document.getElementById("plcHistoryTotal").textContent = "฿" + money(sumAll);
     document.getElementById("plcHistorySumD101").textContent = money(sumD101);
@@ -1074,7 +1081,10 @@ async function loadPlcCashHistory(){
         </tr>
       `).join("");
     }
-    message.innerHTML = `<span class="ok">ค้นหาประวัติสำเร็จ · ${rows.length} รายการ · รวม ${money(sumAll)} บาท</span>`;
+    const recordLabel = Number.isFinite(totalRecords)
+      ? `${totalRecords.toLocaleString("th-TH")} รายการทั้งหมด · แสดง ${rows.length} รายการล่าสุด`
+      : `${rows.length} รายการที่แสดง`;
+    message.innerHTML = `<span class="ok">ค้นหาประวัติสำเร็จ · ${recordLabel} · รวม ${money(sumAll)} บาท</span>`;
   }catch(e){
     document.getElementById("plcHistoryTotal").textContent = "—";
     ["plcHistorySumD101","plcHistorySumD102","plcHistorySumD103"].forEach(id => {
