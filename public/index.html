@@ -169,7 +169,16 @@ input{color:#edf3ff;background:#101f40;border:1px solid #35528b;border-radius:10
             <option value="day">รายวัน</option>
             <option value="month">รายเดือน</option>
             <option value="year">รายปี</option>
+            <option value="range">กำหนดช่วงวันที่</option>
           </select>
+        </div>
+        <div id="plcHistoryRangeStartWrap" style="min-width:170px;display:none">
+          <label class="label" for="plcHistoryStartDate">ตั้งแต่วันที่</label>
+          <input id="plcHistoryStartDate" class="btn" type="date" style="display:block;width:100%;margin-top:5px">
+        </div>
+        <div id="plcHistoryRangeEndWrap" style="min-width:170px;display:none">
+          <label class="label" for="plcHistoryEndDate">ถึงวันที่</label>
+          <input id="plcHistoryEndDate" class="btn" type="date" style="display:block;width:100%;margin-top:5px">
         </div>
         <div id="plcHistoryDateWrap" style="min-width:170px">
           <label class="label" for="plcHistoryDate">เลือกวันที่</label>
@@ -1013,6 +1022,8 @@ function updatePlcHistoryInputs(){
   document.getElementById("plcHistoryDateWrap").style.display = period === "day" ? "block" : "none";
   document.getElementById("plcHistoryMonthWrap").style.display = period === "month" ? "block" : "none";
   document.getElementById("plcHistoryYearWrap").style.display = period === "year" ? "block" : "none";
+  document.getElementById("plcHistoryRangeStartWrap").style.display = period === "range" ? "block" : "none";
+  document.getElementById("plcHistoryRangeEndWrap").style.display = period === "range" ? "block" : "none";
 }
 
 function initPlcHistoryInputs(){
@@ -1022,6 +1033,8 @@ function initPlcHistoryInputs(){
   document.getElementById("plcHistoryDate").value = dateValue;
   document.getElementById("plcHistoryMonth").value = dateValue.slice(0,7);
   document.getElementById("plcHistoryYear").value = dateValue.slice(0,4);
+  document.getElementById("plcHistoryStartDate").value = dateValue;
+  document.getElementById("plcHistoryEndDate").value = dateValue;
 }
 
 async function loadPlcCashHistory(){
@@ -1034,6 +1047,10 @@ async function loadPlcCashHistory(){
   if(period === "day") params.set("date", document.getElementById("plcHistoryDate").value);
   if(period === "month") params.set("month", document.getElementById("plcHistoryMonth").value);
   if(period === "year") params.set("year", document.getElementById("plcHistoryYear").value);
+  if(period === "range"){
+    params.set("startDate", document.getElementById("plcHistoryStartDate").value);
+    params.set("endDate", document.getElementById("plcHistoryEndDate").value);
+  }
   const message = document.getElementById("plcHistoryMessage");
   const body = document.getElementById("plcHistoryRows");
   message.textContent = "กำลังค้นหาประวัติยอดเงิน PLC...";
