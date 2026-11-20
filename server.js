@@ -1473,7 +1473,7 @@ app.get("/api/admin/plc-cash-history", requireAdmin, async (req, res) => {
       const startValue = String(req.query.startDate || "");
       const endValue = String(req.query.endDate || "");
       const validDate = value => {
-        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
         const parsed = new Date(value + "T00:00:00Z");
         return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
       };
