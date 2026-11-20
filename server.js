@@ -1469,8 +1469,28 @@ app.get("/api/admin/plc-cash-history", requireAdmin, async (req, res) => {
       }
       startDate = `${value}-01-01`;
       endDate = `${Number(value) + 1}-01-01`;
+    } else if (period === "range") {
+      const startValue = String(req.query.startDate || "");
+      const endValue = String(req.query.endDate || "");
+      const validDate = value => {
+        if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+        const parsed = new Date(value + "T00:00:00Z");
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+      };
+
+      if (!validDate(startValue) || !validDate(endValue)) {
+        return res.status(400).json({ ok: false, error: "กรุณาเลือกวันที่เริ่มต้นและวันที่สิ้นสุดให้ถูกต้อง" });
+      }
+      if (startValue > endValue) {
+        return res.status(400).json({ ok: false, error: "วันที่เริ่มต้นต้องไม่อยู่หลังวันที่สิ้นสุด" });
+      }
+
+      startDate = startValue;
+      const end = new Date(endValue + "T00:00:00Z");
+      end.setUTCDate(end.getUTCDate() + 1);
+      endDate = end.toISOString().slice(0, 10);
     } else {
-      return res.status(400).json({ ok: false, error: "period ต้องเป็น day, month หรือ year" });
+      return res.status(400).json({ ok: false, error: "period ต้องเป็น day, month, year หรือ range" });
     }
 
     // คำนวณยอดรวมจากประวัติทั้งหมดในช่วงวันที่เลือก (ไม่ติด LIMIT)
