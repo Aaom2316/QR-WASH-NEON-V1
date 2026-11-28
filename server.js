@@ -1366,6 +1366,71 @@ app.get("/api/admin/dashboard", requireAdmin, async (req, res) => {
 });
 
 
+// ============================================================
+// ADMIN PULSE HISTORY — อ่านประวัติคำสั่ง Pulse จากฐานข้อมูลเดิม
+// ใช้สำหรับให้ Central รวมประวัติของสาขา 2
+// READ ONLY: SELECT อย่างเดียว ไม่สร้าง/แก้ไข/ลบข้อมูล
+// ============================================================
+app.get("/api/admin/pulse/history", requireAdmin, async (req, res) => {
+  try {
+    const machineId = String(req.query.machineId || "").trim();
+    const limitValue = Number(req.query.limit || 200);
+    const limit = Number.isInteger(limitValue)
+      ? Math.min(Math.max(limitValue, 1), 1000)
+      : 200;
+
+    if (machineId && !/^[1-9]\d*$/.test(machineId)) {
+      return res.status(400).json({
+        ok: false,
+        error: "machineId ต้องเป็นเลขจำนวนเต็มบวก"
+      });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         c.id AS command_id,
+         COALESCE(d.machine_id::text, c.device_id::text) AS machine_id,
+         c.device_id,
+         d.name AS device_name,
+         c.command_type,
+         c.pulse_count AS pulses,
+         c.status,
+         c.created_at,
+         c.sent_at AS started_at,
+         c.completed_at,
+         CASE
+           WHEN c.status = 'FAILED' THEN COALESCE(c.device_message, '')
+           ELSE ''
+         END AS error_text,
+         p.amount,
+         p.source AS payment_source,
+         p.transaction_key
+       FROM commands c
+       LEFT JOIN devices d
+         ON d.id = c.device_id
+       LEFT JOIN payments p
+         ON p.id = c.payment_id
+       WHERE c.command_type IN ('MANUAL', 'PULSE')
+         AND ($1::text = '' OR COALESCE(d.machine_id::text, c.device_id::text) = $1)
+       ORDER BY c.created_at DESC, c.id DESC
+       LIMIT $2`,
+      [machineId, limit]
+    );
+
+    return res.json({
+      ok: true,
+      commands: result.rows
+    });
+  } catch (e) {
+    console.error("Admin pulse history error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: e.message
+    });
+  }
+});
+
+
 app.get("/api/admin/devices", requireAdmin, async (req, res) => {
 
   try {
